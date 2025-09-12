@@ -2,345 +2,125 @@ import Conversation from '../models/Conversation.js'
 import Message from '../models/Message.js'
 import User from '../models/User.js'
 
-/**
- * @desc    Get user conversations
- * @route   GET /api/chat/conversations
- * @access  Private
- */
 export const getConversations = async (req, res) => {
   try {
     const conversations = await Conversation.findUserConversations(req.user._id)
-    
-    // Add unread count for each conversation
     const conversationsWithUnread = await Promise.all(
-      conversations.map(async (conv) => {
+      conversations.map(async conv => {
         const participant = conv.getParticipant(req.user._id)
-        const lastRead = participant ? participant.lastRead : new Date(0)
-        
         const unreadCount = await Message.countDocuments({
           conversation: conv._id,
-          createdAt: { $gt: lastRead },
+          createdAt: { $gt: participant?.lastRead || 0 },
           sender: { $ne: req.user._id }
         })
-        
-        return {
-          ...conv.toObject(),
-          unreadCount
-        }
+        return { ...conv.toObject(), unreadCount }
       })
     )
-    
-    res.status(200).json({
-      success: true,
-      data: conversationsWithUnread
-    })
+    res.json({ success: true, data: conversationsWithUnread })
   } catch (error) {
-    console.error('Get conversations error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error fetching conversations'
-    })
+    console.error(error)
+    res.status(500).json({ success: false, message: 'Fetching conversations failed' })
   }
 }
 
-/**
- * @desc    Get conversation messages
- * @route   GET /api/chat/conversations/:id/messages
- * @access  Private
- */
 export const getMessages = async (req, res) => {
   try {
-    const { id: conversationId } = req.params
-    const { page = 1, limit = 50 } = req.query
-    
-    // Check if user is participant
-    const conversation = await Conversation.findById(conversationId)
-    if (!conversation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Conversation not found'
-      })
+    const conversation = await Conversation.findById(req.params.id)
+    if (!conversation || !conversation.hasParticipant(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' })
     }
-    
-    if (!conversation.hasParticipant(req.user._id)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to access this conversation'
-      })
-    }
-    
-    // Get messages with pagination
-    const messages = await Message.findConversationMessages(
-      conversationId, 
-      parseInt(page), 
-      parseInt(limit)
-    )
-    
-    // Reverse to show oldest first
-    const sortedMessages = messages.reverse()
-    
-    res.status(200).json({
-      success: true,
-      data: sortedMessages,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        hasMore: messages.length === parseInt(limit)
-      }
-    })
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 50
+    const messages = await Message.findConversationMessages(conversation._id, page, limit)
+    res.json({ success: true, data: messages.reverse() })
   } catch (error) {
-    console.error('Get messages error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error fetching messages'
-    })
+    console.error(error)
+    res.status(500).json({ success: false, message: 'Fetching messages failed' })
   }
 }
 
-/**
- * @desc    Send message
- * @route   POST /api/chat/messages
- * @access  Private
- */
 export const sendMessage = async (req, res) => {
   try {
     const { conversationId, content, type = 'text' } = req.body
-    
-    // Validation
-    if (!conversationId || !content) {
-      return res.status(400).json({
-        success: false,
-        message: 'Conversation ID and content are required'
-      })
-    }
-    
-    // Check if conversation exists and user is participant
     const conversation = await Conversation.findById(conversationId)
-    if (!conversation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Conversation not found'
-      })
+    if (!conversation || !conversation.hasParticipant(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' })
     }
-    
-    if (!conversation.hasParticipant(req.user._id)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to send messages to this conversation'
-      })
-    }
-    
-    // Create message
     const message = new Message({
       content,
       sender: req.user._id,
       conversation: conversationId,
       type
     })
-    
     await message.save()
-    
-    // Populate sender info
-    await message.populate('sender', 'name email avatar')
-    
-    // Update conversation last message
+    await message.populate('sender', 'name avatar')
     await conversation.updateLastMessage(content, req.user._id)
-    
-    res.status(201).json({
-      success: true,
-      message: 'Message sent successfully',
-      data: message
-    })
-    
+    res.status(201).json({ success: true, message: 'Message sent', data: message })
   } catch (error) {
-    console.error('Send message error:', error)
-    
-    if (error.name === 'ValidationError') {
-      const message = Object.values(error.errors).map(val => val.message).join(', ')
-      return res.status(400).json({
-        success: false,
-        message
-      })
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Server error sending message'
-    })
+    console.error(error)
+    res.status(500).json({ success: false, message: 'Sending message failed' })
   }
 }
 
-/**
- * @desc    Mark conversation as read
- * @route   PUT /api/chat/conversations/:id/read
- * @access  Private
- */
 export const markAsRead = async (req, res) => {
   try {
-    const { id: conversationId } = req.params
-    
-    // Find conversation
-    const conversation = await Conversation.findById(conversationId)
-    if (!conversation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Conversation not found'
-      })
+    const conversation = await Conversation.findById(req.params.id)
+    if (!conversation || !conversation.hasParticipant(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' })
     }
-    
-    // Check if user is participant
-    if (!conversation.hasParticipant(req.user._id)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to access this conversation'
-      })
-    }
-    
-    // Update participant's last read timestamp
-    const participant = conversation.participants.find(
-      p => p.user.toString() === req.user._id.toString()
-    )
-    
+    const participant = conversation.participants.find(p => p.user.toString() === req.user._id.toString())
     if (participant) {
       participant.lastRead = new Date()
       await conversation.save()
     }
-    
-    // Mark all messages as read by this user
-    await Message.updateMany(
-      {
-        conversation: conversationId,
-        sender: { $ne: req.user._id }
-      },
-      {
-        $addToSet: {
-          readBy: {
-            user: req.user._id,
-            readAt: new Date()
-          }
-        }
-      }
-    )
-    
-    res.status(200).json({
-      success: true,
-      message: 'Conversation marked as read'
-    })
-    
+    await Message.updateMany({ conversation: conversation._id, sender: { $ne: req.user._id } },
+      { $addToSet: { readBy: { user: req.user._id, readAt: new Date() } } })
+    res.json({ success: true, message: 'Marked as read' })
   } catch (error) {
-    console.error('Mark as read error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error marking conversation as read'
-    })
+    console.error(error)
+    res.status(500).json({ success: false, message: 'Mark as read failed' })
   }
 }
 
-/**
- * @desc    Create or get direct conversation
- * @route   POST /api/chat/conversations/direct
- * @access  Private
- */
 export const createDirectConversation = async (req, res) => {
   try {
-    const { participantId } = req.body
-    
-    if (!participantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Participant ID is required'
-      })
-    }
-    
-    // Check if participant exists
-    const participant = await User.findById(participantId)
-    if (!participant) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      })
-    }
-    
-    // Check if conversation already exists
-    const existingConversation = await Conversation.findOne({
+    const participant = await User.findById(req.body.participantId)
+    if (!participant) return res.status(404).json({ success: false, message: 'User not found' })
+    const existing = await Conversation.findOne({
       type: 'direct',
-      'participants.user': { $all: [req.user._id, participantId] }
-    }).populate('participants.user', 'name email avatar status')
-    
-    if (existingConversation) {
-      return res.status(200).json({
-        success: true,
-        message: 'Conversation retrieved',
-        data: existingConversation
-      })
-    }
-    
-    // Create new conversation
-    const conversation = new Conversation({
+      'participants.user': { $all: [req.user._id, participant._id] }
+    }).populate('participants.user', 'name email avatar')
+    if (existing) return res.json({ success: true, data: existing })
+    const convo = new Conversation({
       type: 'direct',
-      participants: [
-        { user: req.user._id },
-        { user: participantId }
-      ],
+      participants: [{ user: req.user._id }, { user: participant._id }],
       createdBy: req.user._id
     })
-    
-    await conversation.save()
-    
-    // Populate participants
-    await conversation.populate('participants.user', 'name email avatar status')
-    
-    res.status(201).json({
-      success: true,
-      message: 'Conversation created successfully',
-      data: conversation
-    })
-    
+    await convo.save()
+    await convo.populate('participants.user', 'name email avatar')
+    res.status(201).json({ success: true, data: convo })
   } catch (error) {
-    console.error('Create direct conversation error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error creating conversation'
-    })
+    console.error(error)
+    res.status(500).json({ success: false, message: 'Creation failed' })
   }
 }
 
-/**
- * @desc    Search users for new conversations
- * @route   GET /api/chat/users/search
- * @access  Private
- */
 export const searchUsers = async (req, res) => {
   try {
-    const { q: query } = req.query
-    
-    if (!query || query.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query must be at least 2 characters'
-      })
-    }
-    
+    if (!req.query.q || req.query.q.length < 2)
+      return res.status(400).json({ success: false, message: 'Query too short' })
     const users = await User.find({
-      _id: { $ne: req.user._id }, // Exclude current user
+      _id: { $ne: req.user._id },
       isActive: true,
       $or: [
-        { name: { $regex: query, $options: 'i' } },
-        { email: { $regex: query, $options: 'i' } }
+        { name: { $regex: req.query.q, $options: 'i' } },
+        { email: { $regex: req.query.q, $options: 'i' } }
       ]
     }).select('name email avatar status').limit(10)
-    
-    res.status(200).json({
-      success: true,
-      data: users
-    })
-    
+    res.json({ success: true, data: users })
   } catch (error) {
-    console.error('Search users error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Server error searching users'
-    })
+    console.error(error)
+    res.status(500).json({ success: false, message: 'Search failed' })
   }
 }
 
