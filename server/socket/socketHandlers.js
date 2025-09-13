@@ -8,11 +8,11 @@ export const authenticateSocket = async (socket, next) => {
   try {
     let token = socket.handshake.auth.token || socket.handshake.headers.authorization || socket.handshake.query.token
     if (token?.startsWith('Bearer ')) token = token.slice(7)
-    if (!token) return next(new Error('Authentication error - no token'))
+    if (!token) return next(new Error('Authentication error: No token provided'))
 
     const decoded = jwt.verify(token, config.JWT_SECRET)
     const user = await User.findById(decoded.userId).select('-password')
-    if (!user || !user.isActive) return next(new Error('Authentication error - invalid user'))
+    if (!user || !user.isActive) return next(new Error('Authentication error: Invalid user'))
 
     socket.userId = user._id.toString()
     socket.user = user
@@ -42,7 +42,9 @@ export const handleConnection = io => async socket => {
     if (conversation && conversation.hasParticipant(socket.userId)) {
       socket.join(conversationId)
       socket.emit('joined_conversation', { conversationId })
-    } else socket.emit('error', { message: 'Not authorized to join this conversation' })
+    } else {
+      socket.emit('error', { message: 'Not authorized to join this conversation' })
+    }
   })
 
   socket.on('leave_conversation', conversationId => {
@@ -56,23 +58,32 @@ export const handleConnection = io => async socket => {
       const { default: Conversation } = await import('../models/Conversation.js')
       const { default: Message } = await import('../models/Message.js')
       const conversation = await Conversation.findById(conversationId)
-      if (!conversation || !conversation.hasParticipant(socket.userId)) return socket.emit('error', { message: 'Not authorized' })
+      if (!conversation || !conversation.hasParticipant(socket.userId)) {
+        return socket.emit('error', { message: 'Not authorized' })
+      }
       const message = new Message({ content, sender: socket.userId, conversation: conversationId, type })
       await message.save()
       await message.populate('sender', 'name email avatar')
       await conversation.updateLastMessage(content, socket.userId)
       io.to(conversationId).emit('new_message', { message: message.toObject(), conversationId })
-    } catch {
+    } catch (error) {
       socket.emit('error', { message: 'Failed to send message' })
     }
   })
 
   socket.on('typing_start', ({ conversationId }) => {
-    socket.to(conversationId).emit('user_typing', { userId: socket.userId, user: socket.user.getPublicProfile(), conversationId })
+    socket.to(conversationId).emit('user_typing', {
+      userId: socket.userId,
+      user: socket.user.getPublicProfile(),
+      conversationId
+    })
   })
 
   socket.on('typing_stop', ({ conversationId }) => {
-    socket.to(conversationId).emit('user_stop_typing', { userId: socket.userId, conversationId })
+    socket.to(conversationId).emit('user_stop_typing', {
+      userId: socket.userId,
+      conversationId
+    })
   })
 
   socket.on('mark_message_read', async ({ messageId, conversationId }) => {
@@ -90,5 +101,3 @@ export const handleConnection = io => async socket => {
     socket.broadcast.emit('user_offline', { userId: socket.userId })
   })
 }
-
-export default { authenticateSocket, handleConnection }

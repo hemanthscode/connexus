@@ -28,7 +28,9 @@ conversationSchema.index({ 'participants.user': 1 })
 conversationSchema.index({ createdAt: -1 })
 conversationSchema.index({ 'lastMessage.timestamp': -1 })
 
-conversationSchema.virtual('participantCount').get(function () { return this.participants.length })
+conversationSchema.virtual('participantCount').get(function () {
+  return this.participants.length
+})
 
 conversationSchema.methods.hasParticipant = function (userId) {
   return this.participants.some(p => p.user.toString() === userId.toString())

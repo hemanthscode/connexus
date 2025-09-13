@@ -17,7 +17,6 @@ router.get('/conversations', getConversations)
 router.post('/conversations/direct', createDirectConversation)
 router.get('/conversations/:id/messages', getMessages)
 router.put('/conversations/:id/read', markAsRead)
-
 router.post('/messages', sendMessage)
 router.get('/users/search', searchUsers)
 

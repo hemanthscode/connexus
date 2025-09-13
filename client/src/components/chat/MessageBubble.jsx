@@ -1,99 +1,61 @@
-import React from 'react'
-import { motion } from 'framer-motion'
+import Avatar from '../common/Avatar.jsx'
 import { Check, CheckCheck } from 'lucide-react'
-import Avatar from '../ui/Avatar'
-import { formatMessageTime } from '../../utils/formatters'
-import { mockUsers } from '../../data/mockUsers'
-import { cn } from '../../utils/cn'
 
-const MessageBubble = ({ message, isOwn, showAvatar }) => {
-  const sender = mockUsers.find(u => u.id === message.senderId)
-  
-  const bubbleVariants = {
-    hidden: { opacity: 0, scale: 0.8, y: 20 },
-    visible: { 
-      opacity: 1, 
-      scale: 1, 
-      y: 0,
-      transition: {
-        type: "spring",
-        damping: 25,
-        stiffness: 400
-      }
-    }
-  }
+export default function MessageBubble({ message, isMe, recipient }) {
+  // Defensive checks
+  const readBy = message?.readBy || []
+  const sender = message?.sender || { _id: '', name: '', avatar: '', status: 'offline' }
+  const messageStatus = message?.status || 'sent'
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'sent':
-        return <Check className="h-3 w-3" />
-      case 'delivered':
-      case 'read':
-        return <CheckCheck className="h-3 w-3" />
-      default:
-        return null
+  const hasRead = readBy.some(r => r.user === recipient?._id)
+  const hasDelivered = messageStatus === 'delivered' || messageStatus === 'read'
+
+  // Tick rendering logic
+  const renderTick = () => {
+    if (!isMe) return null
+    if (!hasDelivered) {
+      return <Check size={14} className="text-gray-400" />
     }
+    if (hasRead) {
+      return <CheckCheck size={14} className="text-blue-500" />
+    }
+    return <CheckCheck size={14} className="text-gray-400" />
   }
 
   return (
-    <motion.div
-      variants={bubbleVariants}
-      initial="hidden"
-      animate="visible"
-      className={cn(
-        'flex items-end space-x-2',
-        isOwn ? 'justify-end' : 'justify-start'
-      )}
+   <div
+  className={`max-w-xs md:max-w-md rounded-lg p-3 shadow backdrop-blur-sm text-sm flex ${
+    isMe
+      ? 'bg-teal-500 text-white self-end flex-row-reverse'
+      : 'bg-slate-100 text-slate-900 self-start'
+  } relative`}
+  role="article"
+  aria-label={`Message from ${isMe ? 'You' : sender.name}`}
+>
+  {!isMe && (
+    <Avatar src={sender.avatar} alt={sender.name || 'User'} size={32} status={sender.status || 'offline'} />
+  )}
+
+  <div className={`mx-2 break-words ${isMe ? 'pr-8' : ''}`}>
+    {!isMe && <div className="font-semibold">{sender.name || 'Unknown'}</div>}
+    <div>{message?.content || ''}</div>
+    {message.editedAt && <small className="text-xs italic text-muted">edited</small>}
+    <div className="text-xs text-gray-400 mt-1 text-right">
+      {message?.createdAt
+        ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : ''}
+    </div>
+  </div>
+
+  {isMe && (
+    <span
+      className="absolute bottom-1 right-2 flex items-center space-x-0.5"
+      title="Message status"
+      aria-live="polite"
     >
-      {!isOwn && showAvatar && (
-        <Avatar
-          name={sender?.name || 'Unknown'}
-          src={sender?.avatar}
-          size="sm"
-        />
-      )}
-      
-      {!isOwn && !showAvatar && <div className="w-8" />}
-      
-      <div className={cn(
-        'max-w-xs lg:max-w-md',
-        isOwn ? 'order-1' : 'order-2'
-      )}>
-        <div className={cn(
-          'relative px-4 py-2 rounded-2xl shadow-sm',
-          isOwn 
-            ? 'bg-blue-600 text-white' 
-            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-        )}>
-          <p className="text-sm">{message.content}</p>
-          
-          <div className={cn(
-            'flex items-center justify-between mt-1 space-x-2',
-            isOwn ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
-          )}>
-            <span className="text-xs">
-              {formatMessageTime(message.timestamp)}
-            </span>
-            
-            {isOwn && (
-              <span className={cn(
-                'text-xs',
-                message.status === 'read' ? 'text-blue-200' : 'text-blue-300'
-              )}>
-                {getStatusIcon(message.status)}
-              </span>
-            )}
-          </div>
-        </div>
-        
-        {!isOwn && showAvatar && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-2">
-            {sender?.name}
-          </p>
-        )}
-      </div>
-    </motion.div>
+      {renderTick()}
+    </span>
+  )}
+</div>
   )
 }
-
-export default MessageBubble

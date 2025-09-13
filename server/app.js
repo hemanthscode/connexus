@@ -1,6 +1,5 @@
 import dotenv from 'dotenv'
 dotenv.config()
-
 import express from 'express'
 import http from 'http'
 import { Server as SocketIOServer } from 'socket.io'
@@ -9,17 +8,14 @@ import cors from 'cors'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
 import mongoose from 'mongoose'
-
 import { config } from './config.js'
 import authRoutes from './routes/auth.js'
 import chatRoutes from './routes/chat.js'
 import { authenticateSocket, handleConnection } from './socket/socketHandlers.js'
 
-// Create app and server
 const app = express()
 const server = http.createServer(app)
 
-// Setup Socket.IO with CORS, transports, and authentication middleware
 const io = new SocketIOServer(server, {
   cors: {
     origin: config.CLIENT_URL,
@@ -46,31 +42,31 @@ app.use(express.urlencoded({ extended: true }))
 
 // Rate Limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 min
   max: 100,
   message: { error: 'Too many requests, please try again later.' }
 })
 app.use('/api', limiter)
 
-// Make io accessible to routes if needed
+// Make io accessible in routes
 app.set('io', io)
 
-// API routes
+// API Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/chat', chatRoutes)
 
-// Health check
+// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
-    message: `Connexus API running`,
+    message: `${config.APP_NAME} API running`,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     socketConnections: io.engine.clientsCount
   })
 })
 
-// DB status
+// Database status endpoint
 app.get('/api/db-status', async (req, res) => {
   try {
     const state = mongoose.connection.readyState
@@ -101,18 +97,19 @@ app.use((err, req, res, next) => {
   })
 })
 
-// Connect to MongoDB and start server
+// Connect to DB and start server
 const startServer = async () => {
   try {
     await mongoose.connect(config.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    console.log('✅ MongoDB connected:', mongoose.connection.host, mongoose.connection.name)
+    console.log('MongoDB connected:', mongoose.connection.host, mongoose.connection.name)
 
     const serverInstance = server.listen(config.PORT, () => {
-      console.log(`🚀 Server listening on port ${config.PORT} (${config.NODE_ENV})`)
-      console.log(`   API URL: http://localhost:${config.PORT}/api`)
-      console.log(`   Socket.IO URL: ws://localhost:${config.PORT}/socket.io/`)
+      console.log(`Server listening on port ${config.PORT} (${config.NODE_ENV})`)
+      console.log(`API URL: http://localhost:${config.PORT}/api`)
+      console.log(`Socket.IO URL: ws://localhost:${config.PORT}/socket.io/`)
     })
 
+    // Graceful shutdown
     process.on('SIGTERM', () => {
       console.log('SIGTERM received, shutting down gracefully')
       serverInstance.close(() => {
@@ -123,7 +120,7 @@ const startServer = async () => {
       })
     })
   } catch (error) {
-    console.error('❌ Server startup failed:', error)
+    console.error('Server startup failed:', error)
     process.exit(1)
   }
 }

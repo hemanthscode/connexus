@@ -9,8 +9,10 @@ export const register = async (req, res) => {
     }
     const existingUser = await User.findOne({ email })
     if (existingUser) return res.status(400).json({ success: false, message: 'Email already registered' })
+
     const user = new User({ name, email, password })
     await user.save()
+
     const tokenResponse = generateTokenResponse(user)
     res.status(201).json({ success: true, message: 'User registered', data: tokenResponse })
   } catch (error) {
@@ -27,10 +29,13 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body
     if (!email || !password) return res.status(400).json({ success: false, message: 'Provide email and password' })
+
     const user = await User.findOne({ email }).select('+password')
     if (!user || !user.isActive) return res.status(401).json({ success: false, message: 'Invalid credentials' })
+
     const isMatch = await user.matchPassword(password)
     if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' })
+
     await user.updateLastSeen()
     const tokenResponse = generateTokenResponse(user)
     res.status(200).json({ success: true, message: 'Login successful', data: tokenResponse })
@@ -80,10 +85,13 @@ export const changePassword = async (req, res) => {
     }
     const user = await User.findById(req.user._id).select('+password')
     if (!user) return res.status(404).json({ success: false, message: 'User not found' })
+
     const match = await user.matchPassword(currentPassword)
     if (!match) return res.status(401).json({ success: false, message: 'Current password incorrect' })
+
     user.password = newPassword
     await user.save()
+
     res.status(200).json({ success: true, message: 'Password changed' })
   } catch (error) {
     console.error('Change password error:', error)

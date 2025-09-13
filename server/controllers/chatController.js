@@ -29,8 +29,8 @@ export const getMessages = async (req, res) => {
     if (!conversation || !conversation.hasParticipant(req.user._id)) {
       return res.status(403).json({ success: false, message: 'Unauthorized' })
     }
-    const page = parseInt(req.query.page) || 1
-    const limit = parseInt(req.query.limit) || 50
+    const page = parseInt(req.query.page, 10) || 1
+    const limit = parseInt(req.query.limit, 10) || 50
     const messages = await Message.findConversationMessages(conversation._id, page, limit)
     res.json({ success: true, data: messages.reverse() })
   } catch (error) {
@@ -73,8 +73,10 @@ export const markAsRead = async (req, res) => {
       participant.lastRead = new Date()
       await conversation.save()
     }
-    await Message.updateMany({ conversation: conversation._id, sender: { $ne: req.user._id } },
-      { $addToSet: { readBy: { user: req.user._id, readAt: new Date() } } })
+    await Message.updateMany(
+      { conversation: conversation._id, sender: { $ne: req.user._id } },
+      { $addToSet: { readBy: { user: req.user._id, readAt: new Date() } } }
+    )
     res.json({ success: true, message: 'Marked as read' })
   } catch (error) {
     console.error(error)
@@ -86,11 +88,14 @@ export const createDirectConversation = async (req, res) => {
   try {
     const participant = await User.findById(req.body.participantId)
     if (!participant) return res.status(404).json({ success: false, message: 'User not found' })
+
     const existing = await Conversation.findOne({
       type: 'direct',
       'participants.user': { $all: [req.user._id, participant._id] }
     }).populate('participants.user', 'name email avatar')
+
     if (existing) return res.json({ success: true, data: existing })
+
     const convo = new Conversation({
       type: 'direct',
       participants: [{ user: req.user._id }, { user: participant._id }],
@@ -109,6 +114,7 @@ export const searchUsers = async (req, res) => {
   try {
     if (!req.query.q || req.query.q.length < 2)
       return res.status(400).json({ success: false, message: 'Query too short' })
+
     const users = await User.find({
       _id: { $ne: req.user._id },
       isActive: true,
@@ -117,6 +123,7 @@ export const searchUsers = async (req, res) => {
         { email: { $regex: req.query.q, $options: 'i' } }
       ]
     }).select('name email avatar status').limit(10)
+
     res.json({ success: true, data: users })
   } catch (error) {
     console.error(error)

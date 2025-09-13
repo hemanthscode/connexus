@@ -28,8 +28,8 @@ messageSchema.virtual('formattedTimestamp').get(function () {
 })
 
 messageSchema.methods.markAsRead = function (userId) {
-  const existing = this.readBy.find(r => r.user.toString() === userId.toString())
-  if (!existing) {
+  const exists = this.readBy.find(r => r.user.toString() === userId.toString())
+  if (!exists) {
     this.readBy.push({ user: userId, readAt: new Date() })
     return this.save()
   }
