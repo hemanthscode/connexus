@@ -11,15 +11,14 @@ export default function ChatWindow({ darkMode, toggleDarkMode }) {
   const { user } = useAuth()
   const [typingUsers, setTypingUsers] = useState([])
   const messagesEndRef = useRef(null)
-  
-  // Find the other participant in the conversation
+
   const participant = activeConversation?.participants.find(p => p.user._id !== user._id)?.user
+  const isGroup = activeConversation?.type === 'group'
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, typingUsers])
 
-  // Typing event listeners
   useEffect(() => {
     if (!socket) return
 
@@ -42,22 +41,23 @@ export default function ChatWindow({ darkMode, toggleDarkMode }) {
 
   if (!activeConversation) {
     return (
-      <main className="flex flex-col flex-1 items-center justify-center text-gray-400 bg-black/20 backdrop-blur-md rounded-l-lg p-6">
-        <p>Please select a conversation to start chatting.</p>
+      <main className="flex flex-col flex-1 items-center justify-center text-gray-700 bg-gray-100 rounded-l-lg p-6">
+        <p>Select a conversation to start chatting.</p>
       </main>
     )
   }
 
   return (
-    <main className="flex flex-col flex-1 bg-black/20 backdrop-blur-md rounded-l-lg p-0 max-h-screen">
+    <main className="flex flex-col flex-1 bg-gray-100 rounded-l-lg max-h-screen">
       <Header participant={participant} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4 pb-4 scrollbar-thin scrollbar-thumb-[#39FF14]/60 scrollbar-track-transparent scroll-smooth px-4 py-3 flex flex-col">
+      <div className="flex-1 overflow-y-auto space-y-4 mb-4 pb-4 scrollbar-thin scrollbar-thumb-blue-600 scrollbar-track-transparent scroll-smooth px-4 py-3 flex flex-col">
         {messages.map(msg => (
           <MessageBubble
             key={msg._id}
             message={msg}
             isMe={msg.sender._id === user._id}
             recipient={participant}
+            isGroup={isGroup}
           />
         ))}
         <div ref={messagesEndRef} />

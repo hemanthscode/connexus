@@ -23,22 +23,22 @@ export default function Register() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900">
       <motion.form
         onSubmit={handleSubmit}
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-black/30 backdrop-blur-md rounded-lg p-8 w-full max-w-md space-y-6 shadow-lg"
+        className="bg-white dark:bg-gray-800 p-8 rounded-md shadow-md w-full max-w-md space-y-6"
       >
-        <h2 className="text-3xl text-[#39FF14] font-bold text-center uppercase">Register</h2>
-        {error && <p className="text-red-500 text-center">{error}</p>}
+        <h2 className="text-3xl font-bold text-blue-600 dark:text-blue-400 text-center uppercase">Register</h2>
+        {error && <p className="text-red-600">{error}</p>}
         <input
           type="text"
           required
           placeholder="Full Name"
           value={name}
           onChange={e => setName(e.target.value)}
-          className="w-full px-4 py-3 rounded bg-black/50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#39FF14] text-white"
+          className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-600 dark:bg-gray-700 dark:text-white dark:border-gray-600"
           autoComplete="name"
           disabled={loading}
         />
@@ -48,7 +48,7 @@ export default function Register() {
           placeholder="Email"
           value={email}
           onChange={e => setEmail(e.target.value)}
-          className="w-full px-4 py-3 rounded bg-black/50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#39FF14] text-white"
+          className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-600 dark:bg-gray-700 dark:text-white dark:border-gray-600"
           autoComplete="email"
           disabled={loading}
         />
@@ -58,20 +58,20 @@ export default function Register() {
           placeholder="Password"
           value={password}
           onChange={e => setPassword(e.target.value)}
-          className="w-full px-4 py-3 rounded bg-black/50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#39FF14] text-white"
+          className="w-full p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-600 dark:bg-gray-700 dark:text-white dark:border-gray-600"
           autoComplete="new-password"
           disabled={loading}
         />
         <button
           type="submit"
-          className="w-full py-3 bg-[#39FF14] text-black rounded font-semibold tracking-wider shadow hover:bg-[#2AC10B] transition disabled:opacity-60"
+          className="w-full py-3 bg-blue-600 text-white font-semibold rounded hover:bg-blue-700 transition disabled:opacity-50"
           disabled={loading}
         >
           {loading ? 'Registering...' : 'Register'}
         </button>
-        <p className="text-center text-gray-400">
+        <p className="text-center text-gray-600 dark:text-gray-400">
           Already have an account?{' '}
-          <Link to="/login" className="text-[#39FF14] hover:underline">
+          <Link to="/login" className="text-blue-600 hover:underline">
             Login
           </Link>
         </p>

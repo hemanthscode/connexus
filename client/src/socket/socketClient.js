@@ -3,7 +3,7 @@ import { io } from 'socket.io-client'
 let socket = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 10
-const RECONNECT_BASE_DELAY = 1000 // 1 second base
+const RECONNECT_BASE_DELAY = 1000
 
 let outboundQueue = []
 let isConnected = false
@@ -12,23 +12,18 @@ function createSocket(token) {
   const newSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
     auth: { token },
     transports: ['websocket'],
-    reconnection: false // manual reconnection for custom backoff
+    reconnection: false,
   })
 
   newSocket.on('connect', () => {
-    console.log('Socket connected:', newSocket.id)
     reconnectAttempts = 0
     isConnected = true
     flushQueue()
-    // Emit heartbeat ping every 25 seconds
-    heartbeat()
   })
 
-  newSocket.on('disconnect', (reason) => {
-    console.log('Socket disconnected:', reason)
+  newSocket.on('disconnect', () => {
     isConnected = false
-    // Try to reconnect with exponential backoff
-    attemptReconnect(newSocket, token)
+    attemptReconnect()
   })
 
   newSocket.on('connect_error', (error) => {
@@ -38,37 +33,24 @@ function createSocket(token) {
   return newSocket
 }
 
-function attemptReconnect(socketInstance, token) {
+function attemptReconnect() {
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.error('Max reconnect attempts reached, giving up.')
+    console.error('Max reconnect attempts reached.')
     return
   }
   const delay = RECONNECT_BASE_DELAY * 2 ** reconnectAttempts
-  reconnectAttempts += 1
+  reconnectAttempts++
   setTimeout(() => {
-    console.log(`Reconnecting attempt ${reconnectAttempts}...`)
-    socket = createSocket(token)
+    socket = createSocket(socket.auth?.token)
   }, delay)
 }
 
 function flushQueue() {
   if (!isConnected || !socket) return
-  while (outboundQueue.length > 0) {
+  while (outboundQueue.length) {
     const { event, data } = outboundQueue.shift()
     socket.emit(event, data)
   }
-}
-
-// Heartbeat ping/pong
-let heartbeatIntervalId
-function heartbeat() {
-  clearInterval(heartbeatIntervalId)
-  if (!socket || !isConnected) return
-  heartbeatIntervalId = setInterval(() => {
-    if (socket && isConnected) {
-      socket.emit('heartbeat_ping')
-    }
-  }, 25000)
 }
 
 export function initiateSocket(token) {
@@ -82,7 +64,6 @@ export function getSocket() {
 }
 
 export function disconnectSocket() {
-  clearInterval(heartbeatIntervalId)
   if (socket) {
     socket.disconnect()
     socket = null
@@ -92,7 +73,6 @@ export function disconnectSocket() {
   }
 }
 
-// Emit event with queueing if offline
 export function emitWithQueue(event, data) {
   if (socket && isConnected) {
     socket.emit(event, data)

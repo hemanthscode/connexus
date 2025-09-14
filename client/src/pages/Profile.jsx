@@ -14,13 +14,15 @@ export default function Profile() {
   const [passMsg, setPassMsg] = useState(null)
 
   useEffect(() => {
-    if (user) setForm({ name: user.name, email: user.email, status: user.status, avatar: user.avatar || '' })
+    if (user) {
+      setForm({ name: user.name, email: user.email, status: user.status || '', avatar: user.avatar || '' })
+    }
   }, [user])
 
   const handleChange = (e) => setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
   const handlePasswordChange = (e) => setPassData(prev => ({ ...prev, [e.target.name]: e.target.value }))
 
-  const handleProfileUpdate = async (e) => {
+  const handleProfileUpdate = async e => {
     e.preventDefault()
     setMessage(null)
     setLoading(true)
@@ -29,11 +31,12 @@ export default function Profile() {
       setMessage('Profile updated successfully.')
     } catch (e) {
       setMessage(e.message)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
-  const handlePasswordUpdate = async (e) => {
+  const handlePasswordUpdate = async e => {
     e.preventDefault()
     setPassMsg(null)
     setLoading(true)
@@ -43,24 +46,29 @@ export default function Profile() {
       setPassData({ currentPassword: '', newPassword: '' })
     } catch (e) {
       setPassMsg(e.message)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-bl from-gray-900 via-black to-gray-800 flex flex-col items-center justify-center p-6 text-white">
-      <section className="bg-black/50 backdrop-blur-lg rounded-xl p-10 max-w-md w-full text-white flex flex-col items-center space-y-6 shadow-lg">
-        <Avatar src={form.avatar} alt={form.name} size={120} status={form.status} />
-        <form onSubmit={handleProfileUpdate} className="w-full space-y-4">
-          <Input name="name" value={form.name} onChange={handleChange} placeholder="Name" disabled={loading} />
+    <main className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center px-6 py-10">
+      <section className="bg-white dark:bg-gray-800 rounded-lg p-8 w-full max-w-md space-y-6 shadow-lg text-gray-900 dark:text-gray-100">
+        <div className="flex flex-col items-center space-y-4">
+          <Avatar src={form.avatar} alt={form.name} size={120} status={form.status} />
+          <h1 className="text-2xl font-bold">{form.name}</h1>
+        </div>
+        <form onSubmit={handleProfileUpdate} className="space-y-4">
+          <Input name="name" value={form.name} onChange={handleChange} placeholder="Full Name" disabled={loading} />
           <Input name="email" value={form.email} onChange={handleChange} placeholder="Email" disabled={loading} />
           <Input name="status" value={form.status} onChange={handleChange} placeholder="Status" disabled={loading} />
           <Input name="avatar" value={form.avatar} onChange={handleChange} placeholder="Avatar URL" disabled={loading} />
-          {message && <p className="text-green-400">{message}</p>}
+          {message && <p className="text-green-600">{message}</p>}
           <Button type="submit" disabled={loading}>{loading ? 'Updating...' : 'Update Profile'}</Button>
         </form>
 
-        <form onSubmit={handlePasswordUpdate} className="w-full space-y-4">
+        <form onSubmit={handlePasswordUpdate} className="space-y-4">
+          <h2 className="text-lg font-semibold">Change Password</h2>
           <Input
             type="password"
             name="currentPassword"
@@ -77,11 +85,11 @@ export default function Profile() {
             placeholder="New Password"
             disabled={loading}
           />
-          {passMsg && <p className="text-green-400">{passMsg}</p>}
+          {passMsg && <p className="text-green-600">{passMsg}</p>}
           <Button type="submit" disabled={loading}>{loading ? 'Changing...' : 'Change Password'}</Button>
         </form>
 
-        <Button onClick={logout} className="w-full bg-[#39FF14] text-black mt-6 hover:bg-[#2AC10B] font-bold">Logout</Button>
+        <Button onClick={logout} className="w-full bg-red-600 hover:bg-red-700">Logout</Button>
       </section>
     </main>
   )

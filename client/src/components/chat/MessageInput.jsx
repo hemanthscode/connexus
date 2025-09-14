@@ -1,58 +1,36 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { LucideSend } from 'lucide-react'
-import { useChat } from '../../contexts/ChatContext.jsx'
 
 export default function MessageInput({ sendMessage }) {
   const [input, setInput] = useState('')
-  const typingTimeout = useRef(null)
-  const { socket, activeConversation } = useChat()
-
-  const isOffline = !socket || socket.disconnected
-
-  // Handle typing events with debounce
-  useEffect(() => {
-    if (!socket || !activeConversation) return
-
-    if (input.trim()) {
-      socket.emit('typing_start', { conversationId: activeConversation._id })
-      clearTimeout(typingTimeout.current)
-      typingTimeout.current = setTimeout(() => {
-        socket.emit('typing_stop', { conversationId: activeConversation._id })
-      }, 2000)
-    } else {
-      socket.emit('typing_stop', { conversationId: activeConversation._id })
-    }
-
-    return () => clearTimeout(typingTimeout.current)
-  }, [input, socket, activeConversation])
+  const inputRef = useRef()
 
   const onSend = e => {
     e.preventDefault()
-    if (!input.trim() || isOffline) return
+    if (!input.trim()) return
     sendMessage(input.trim())
     setInput('')
+    inputRef.current?.focus()
   }
 
   return (
-    <form onSubmit={onSend} className="flex items-center gap-3 border-t border-gray-300 p-3 bg-white">
+    <form
+      onSubmit={onSend}
+      className="flex items-center gap-3 border-t border-gray-300 bg-white p-3"
+      autoComplete="off"
+    >
       <input
+        ref={inputRef}
         type="text"
-        placeholder={isOffline ? 'Offline - messages disabled' : 'Type a message...'}
-        className="flex-1 rounded-full border border-gray-300 px-6 py-3 text-slate-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500"
+        placeholder="Type a message..."
+        className="flex-1 rounded-full border border-gray-300 px-6 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 transition"
         value={input}
         onChange={e => setInput(e.target.value)}
-        autoComplete="off"
-        disabled={isOffline}
-        aria-disabled={isOffline}
-        aria-label="Message input"
       />
       <button
         type="submit"
-        className={`p-3 rounded-full bg-teal-500 text-white hover:bg-teal-600 transition ${
-          isOffline ? 'opacity-50 cursor-not-allowed' : ''
-        }`}
-        disabled={isOffline}
         aria-label="Send message"
+        className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition shadow-md"
       >
         <LucideSend size={20} />
       </button>

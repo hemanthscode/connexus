@@ -4,108 +4,92 @@ import { Link } from 'react-router-dom'
 import { useChat } from '../../contexts/ChatContext.jsx'
 import { useAuth } from '../../contexts/AuthContext.jsx'
 import ConversationItem from '../chat/ConversationItem.jsx'
-import * as userService from '../../services/userService.js'
-import { debounce } from '../../utils/debounce.js'
 
 export default function Sidebar() {
   const [open, setOpen] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [searchResults, setSearchResults] = useState([])
+  const [filteredConversations, setFilteredConversations] = useState([])
   const { conversations, activeConversation, setActiveConversation } = useChat()
-  const { user, logout, token } = useAuth()
-
-  const debouncedSearch = debounce(q => {
-    if (q.length < 3) {
-      setSearchResults([])
-      return
-    }
-    userService.searchUsers(q, token).then(setSearchResults).catch(() => setSearchResults([]))
-  }, 400)
+  const { user, logout } = useAuth()
 
   useEffect(() => {
-    debouncedSearch(searchTerm)
-  }, [searchTerm])
+    const searchLower = searchTerm.trim().toLowerCase()
+    if (!searchLower) {
+      setFilteredConversations(conversations)
+      return
+    }
+    const filtered = conversations.filter((conv) => {
+      if (conv.type === 'group') {
+        return conv.name.toLowerCase().includes(searchLower)
+      }
+      const other = conv.participants.find(p => p.user._id !== user._id)?.user
+      return other?.name.toLowerCase().includes(searchLower) || other?.email.toLowerCase().includes(searchLower)
+    })
+    setFilteredConversations(filtered)
+  }, [searchTerm, conversations, user._id])
 
   return (
     <>
       <button
         onClick={() => setOpen(!open)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded bg-teal-500 text-white shadow-lg"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded bg-blue-600 text-white shadow-lg"
         aria-label="Toggle menu"
       >
         <LucideMenu size={24} />
       </button>
+
       <aside
-        className={`fixed top-0 left-0 w-72 h-screen bg-white border-r border-slate-300 transition-transform duration-300 ${
+        className={`fixed top-0 left-0 w-72 h-screen bg-white shadow-lg lg:shadow-none border-r border-gray-200 transition-transform duration-300 ${
           open ? 'translate-x-0' : '-translate-x-full'
-        } lg:translate-x-0 lg:static flex flex-col p-5`}
+        } lg:translate-x-0 lg:static flex flex-col p-4`}
       >
-        <h1 className="text-teal-600 font-extrabold text-3xl uppercase mb-8 text-center select-none">Connexus</h1>
-        <div className="flex items-center bg-slate-100 rounded-full px-4 py-2 mb-6 text-slate-700">
+        <h1 className="text-blue-600 font-extrabold text-3xl uppercase text-center mb-8 select-none">
+          Connexus
+        </h1>
+
+        <div className="flex items-center bg-gray-100 rounded-full px-4 py-2 mb-4 text-gray-700">
           <LucideSearch size={20} />
           <input
-            type="search"
-            placeholder="Search users..."
-            className="flex-1 ml-3 bg-transparent placeholder-slate-500 focus:outline-none"
+            type="text"
+            placeholder="Search conversations..."
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            aria-label="Search users"
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="flex-1 ml-3 bg-transparent border-none outline-none placeholder-gray-400"
+            aria-label="Search conversations"
           />
         </div>
-        {searchResults.length > 0 && (
-          <div className="bg-slate-50 rounded p-2 mb-6 max-h-48 overflow-y-auto">
-            {searchResults.map(u => (
-              <div
-                key={u._id}
-                className="flex items-center p-2 cursor-pointer hover:bg-teal-100 rounded text-teal-900"
-                onClick={() => {
-                  setSearchTerm('')
-                  setSearchResults([])
-                  // TODO: Create or switch to direct conversation with u._id
-                }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setActiveConversation(u)}
-                aria-label={`Start chat with ${u.name}`}
-              >
-                <img
-                  src={u.avatar || '/default-avatar.png'}
-                  alt={u.name}
-                  className="w-8 h-8 rounded-full object-cover"
-                />
-                <span className="ml-3 truncate">{u.name}</span>
-                <span className="ml-auto text-sm text-slate-500 capitalize">{u.status}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <nav className="flex-1 overflow-y-auto">
-          <ul className="space-y-3">
-            {conversations.map(conv => (
+
+        <nav className="overflow-y-auto flex-1">
+          <ul className="space-y-3 max-h-[calc(100vh-220px)] overflow-y-auto scrollbar-thin scrollbar-thumb-blue-600 scrollbar-track-transparent">
+            {filteredConversations.map((conv) => (
               <ConversationItem
                 key={conv._id}
                 conversation={conv}
                 active={activeConversation?._id === conv._id}
-                onClick={() => setActiveConversation(conv)}
                 currentUserId={user._id}
                 unreadCount={conv.unreadCount}
+                onClick={() => setActiveConversation(conv)}
               />
             ))}
+            {filteredConversations.length === 0 && (
+              <li className="text-gray-500 p-3 text-center select-none">
+                No conversations found.
+              </li>
+            )}
           </ul>
         </nav>
-        <div className="mt-6 flex justify-between">
+
+        <div className="mt-auto flex justify-between items-center">
           <Link
             to="/profile"
-            className="flex items-center space-x-2 px-4 py-2 bg-teal-500 text-white font-semibold rounded hover:bg-teal-600 transition"
-            aria-label="Go to user profile"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
           >
             <LucideUser size={18} />
-            <span>Profile</span>
+            Profile
           </Link>
           <button
             onClick={logout}
-            className="px-6 py-2 rounded bg-teal-500 text-white font-semibold hover:bg-teal-600 transition"
-            aria-label="Logout"
+            className="px-6 py-2 text-white bg-red-600 rounded hover:bg-red-700 transition font-semibold"
           >
             Logout
           </button>

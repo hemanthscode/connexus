@@ -1,11 +1,7 @@
 import React, { createContext, useReducer, useEffect, useRef, useContext } from 'react'
 import { useAuth } from './AuthContext.jsx'
 import * as chatService from '../services/chatService.js'
-import {
-  initiateSocket,
-  disconnectSocket,
-  emitWithQueue,
-} from '../socket/socketClient.js'
+import { initiateSocket, disconnectSocket, emitWithQueue } from '../socket/socketClient.js'
 import { SOCKET_EVENTS } from '../utils/constants.js'
 
 const initialState = {
@@ -14,11 +10,12 @@ const initialState = {
   messages: [],
   typingUsers: [],
   onlineUsers: new Set(),
+  userStatuses: {},
   error: null,
 }
 
 function chatReducer(state, action) {
-  switch (action.type) {
+  switch(action.type) {
     case 'SET_CONVERSATIONS':
       return { ...state, conversations: action.payload }
     case 'SET_ACTIVE_CONVERSATION':
@@ -27,71 +24,73 @@ function chatReducer(state, action) {
         activeConversation: action.payload,
         messages: [],
         typingUsers: [],
+        conversations: state.conversations.map(c => (c._id === action.payload?._id ? { ...c, unreadCount: 0 } : c)),
       }
     case 'SET_MESSAGES':
       return { ...state, messages: action.payload }
-    case 'ADD_MESSAGE':
+    case 'ADD_MESSAGE': {
+      const isActive = state.activeConversation?._id === action.payload.conversation
+      const updatedConvos = state.conversations.map(c => {
+        if (c._id === action.payload.conversation) {
+          return isActive
+            ? { ...c, lastMessage: action.payload, unreadCount: 0 }
+            : { ...c, lastMessage: action.payload, unreadCount: (c.unreadCount || 0) + 1 }
+        }
+        return c
+      })
       return {
         ...state,
         messages: [...state.messages, action.payload],
-        conversations: state.conversations.map((c) =>
-          c._id === action.payload.conversation
-            ? {
-                ...c,
-                lastMessage: action.payload,
-                unreadCount:
-                  c._id === state.activeConversation?._id
-                    ? 0
-                    : (c.unreadCount || 0) + 1,
-              }
-            : c,
-        ),
-      }
-    case 'UPDATE_MESSAGE':
-      return {
-        ...state,
-        messages: state.messages.map((m) =>
-          m._id === action.payload._id ? { ...m, ...action.payload } : m,
-        ),
-      }
-    case 'REMOVE_MESSAGE':
-      return {
-        ...state,
-        messages: state.messages.filter((m) => m._id !== action.payload),
-      }
-    case 'MARK_MESSAGE_READ': {
-      const { messageId, userId } = action.payload
-      return {
-        ...state,
-        messages: state.messages.map((m) =>
-          m._id === messageId
-            ? {
-                ...m,
-                readBy: m.readBy.some((r) => r.user === userId)
-                  ? m.readBy
-                  : [...m.readBy, { user: userId, readAt: new Date().toISOString() }],
-              }
-            : m,
-        ),
-        conversations: state.conversations.map((c) =>
-          c._id === state.activeConversation?._id ? { ...c, unreadCount: 0 } : c,
-        ),
+        conversations: updatedConvos,
       }
     }
-    case 'USER_ONLINE':
-      return { ...state, onlineUsers: new Set(state.onlineUsers).add(action.payload) }
+    case 'MARK_MESSAGES_READ': {
+      const { conversationId, userId } = action.payload
+      const updatedMessages = state.messages.map(m =>
+        m.conversation === conversationId && !m.readBy.find(r => r.user === userId)
+          ? { ...m, readBy: [...m.readBy, { user: userId, readAt: new Date().toISOString() }] }
+          : m
+      )
+      const updatedConversations = state.conversations.map(c =>
+        c._id === conversationId ? { ...c, unreadCount: 0 } : c
+      )
+      return {
+        ...state,
+        messages: updatedMessages,
+        conversations: updatedConversations,
+      }
+    }
+    case 'USER_ONLINE': {
+      const newOnline = new Set(state.onlineUsers)
+      newOnline.add(action.payload.userId)
+      return {
+        ...state,
+        onlineUsers: newOnline,
+        userStatuses: {
+          ...state.userStatuses,
+          [action.payload.userId]: { status: 'online', lastSeen: action.payload.lastSeen || null },
+        },
+      }
+    }
     case 'USER_OFFLINE': {
-      const newSet = new Set(state.onlineUsers)
-      newSet.delete(action.payload)
-      return { ...state, onlineUsers: newSet }
+      const newOnline = new Set(state.onlineUsers)
+      newOnline.delete(action.payload.userId)
+      return {
+        ...state,
+        onlineUsers: newOnline,
+        userStatuses: {
+          ...state.userStatuses,
+          [action.payload.userId]: { status: 'offline', lastSeen: action.payload.lastSeen || new Date().toISOString() },
+        },
+      }
     }
     case 'USER_TYPING': {
       const { userId, userName } = action.payload
-      if (state.typingUsers.find((u) => u.userId === userId)) return state
+      if (state.typingUsers.find(u => u.userId === userId)) return state
       return { ...state, typingUsers: [...state.typingUsers, { userId, userName }] }
     }
     case 'USER_STOP_TYPING': {
-      return { ...state, typingUsers: state.typingUsers.filter((u) => u.userId !== action.payload) }
+      return { ...state, typingUsers: state.typingUsers.filter(u => u.userId !== action.payload) }
     }
     case 'RESET_TYPING_USERS':
       return { ...state, typingUsers: [] }
@@ -104,54 +103,48 @@ function chatReducer(state, action) {
 
 const ChatContext = createContext()
 
-const CONV_FETCH_COOLDOWN = 10000
-
 export function ChatProvider({ children }) {
   const { token, user } = useAuth()
   const [state, dispatch] = useReducer(chatReducer, initialState)
   const socketRef = useRef(null)
-  const lastConvFetchRef = useRef(0)
 
-  // Initialize socket and attach events
   useEffect(() => {
     if (!token || !user) return
+
     const socket = initiateSocket(token)
     socketRef.current = socket
 
-    const onUserOnline = ({ userId }) => dispatch({ type: 'USER_ONLINE', payload: userId })
-    const onUserOffline = ({ userId }) => dispatch({ type: 'USER_OFFLINE', payload: userId })
+    const onUserOnline = ({ userId, lastSeen }) => dispatch({ type: 'USER_ONLINE', payload: { userId, lastSeen } })
+    const onUserOffline = ({ userId, lastSeen }) => dispatch({ type: 'USER_OFFLINE', payload: { userId, lastSeen } })
 
-    const onNewMessage = ({ message, conversationId }) => {
+    const onNewMessage = ({ message }) => {
       dispatch({ type: 'ADD_MESSAGE', payload: message })
-      if (state.activeConversation?._id === conversationId) {
+      if (state.activeConversation?._id === message.conversation) {
+        dispatch({
+          type: 'MARK_MESSAGES_READ',
+          payload: { conversationId: message.conversation, userId: user._id },
+        })
         emitWithQueue(SOCKET_EVENTS.MARK_MESSAGE_READ, {
-          conversationId,
-          messageId: message._id,
+          conversationId: message.conversation,
+          userId: user._id,
+          messageIds: [message._id],
         })
       }
     }
 
-    const onMessageRead = ({ messageId, readBy }) => {
-      dispatch({ type: 'MARK_MESSAGE_READ', payload: { messageId, userId: readBy } })
+    const onMessageRead = ({ conversationId, userId }) => {
+      dispatch({ type: 'MARK_MESSAGES_READ', payload: { conversationId, userId } })
     }
 
-    const onUserTyping = ({ userId, user: typingUser }) => {
-      if (userId !== user._id) dispatch({ type: 'USER_TYPING', payload: { userId, userName: typingUser.name } })
+    const onUserTyping = ({ userId, user }) => {
+      if (userId !== user._id) dispatch({ type: 'USER_TYPING', payload: { userId, userName: user.name } })
     }
-
     const onUserStopTyping = ({ userId }) => {
       dispatch({ type: 'USER_STOP_TYPING', payload: userId })
     }
 
     const onReconnect = () => {
-      const now = Date.now()
-      if (now - lastConvFetchRef.current > CONV_FETCH_COOLDOWN) {
-        chatService
-          .getConversations(token)
-          .then((convos) => dispatch({ type: 'SET_CONVERSATIONS', payload: convos }))
-          .catch((err) => dispatch({ type: 'SET_ERROR', payload: err.message }))
-        lastConvFetchRef.current = now
-      }
+      chatService.getConversations(token).then(convos => dispatch({ type: 'SET_CONVERSATIONS', payload: convos })).catch(console.error)
       dispatch({ type: 'RESET_TYPING_USERS' })
     }
 
@@ -163,6 +156,9 @@ export function ChatProvider({ children }) {
     socket.on('user_stop_typing', onUserStopTyping)
     socket.on('connect', onReconnect)
 
+    // Initial load
+    chatService.getConversations(token).then(convos => dispatch({ type: 'SET_CONVERSATIONS', payload: convos })).catch(console.error)
+
     return () => {
       socket.off('user_online', onUserOnline)
       socket.off('user_offline', onUserOffline)
@@ -173,46 +169,27 @@ export function ChatProvider({ children }) {
       socket.off('connect', onReconnect)
       disconnectSocket()
     }
-  }, [token, user, state.activeConversation?._id])
+  }, [token, user])
 
-  // Load conversations with cooldown
   useEffect(() => {
-    if (!token) return
-    const now = Date.now()
-    if (now - lastConvFetchRef.current < CONV_FETCH_COOLDOWN) return
-    lastConvFetchRef.current = now
-
-    chatService
-      .getConversations(token)
-      .then((convos) => dispatch({ type: 'SET_CONVERSATIONS', payload: convos }))
-      .catch((err) => {
-        if (err.message.includes('429')) {
-          dispatch({ type: 'SET_ERROR', payload: 'Too many requests, please wait and try again.' })
-        } else {
-          dispatch({ type: 'SET_ERROR', payload: err.message })
-        }
+    if (!state.activeConversation || !token) return
+    chatService.getMessages(state.activeConversation._id, token).then(msgs => {
+      dispatch({ type: 'SET_MESSAGES', payload: msgs })
+      dispatch({
+        type: 'SET_CONVERSATIONS',
+        payload: state.conversations.map(c =>
+          c._id === state.activeConversation._id ? { ...c, unreadCount: 0 } : c
+        )
       })
-  }, [token])
-
-  // Load messages when activeConversation changes
-  useEffect(() => {
-    if (!state.activeConversation || !token) {
-      dispatch({ type: 'SET_MESSAGES', payload: [] })
-      dispatch({ type: 'RESET_TYPING_USERS' })
-      return
-    }
-    chatService
-      .getMessages(state.activeConversation._id, token)
-      .then((msgs) => {
-        dispatch({ type: 'SET_MESSAGES', payload: msgs })
-        dispatch({
-          type: 'SET_CONVERSATIONS',
-          payload: state.conversations.map((c) =>
-            c._id === state.activeConversation._id ? { ...c, unreadCount: 0 } : c,
-          ),
-        })
+      // Mark all messages visible as read on backend and frontend
+      const messageIds = msgs.map(m => m._id)
+      dispatch({ type: 'MARK_MESSAGES_READ', payload: { conversationId: state.activeConversation._id, userId: user._id } })
+      emitWithQueue(SOCKET_EVENTS.MARK_MESSAGE_READ, {
+        conversationId: state.activeConversation._id,
+        userId: user._id,
+        messageIds,
       })
-      .catch((err) => dispatch({ type: 'SET_ERROR', payload: err.message }))
+    }).catch(console.error)
   }, [state.activeConversation, token])
 
   const sendMessage = (content, type = 'text') => {
@@ -233,7 +210,7 @@ export function ChatProvider({ children }) {
     <ChatContext.Provider
       value={{
         ...state,
-        setActiveConversation: (conv) => dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: conv }),
+        setActiveConversation: conv => dispatch({ type: 'SET_ACTIVE_CONVERSATION', payload: conv }),
         sendMessage,
         markTyping,
         socket: socketRef.current,

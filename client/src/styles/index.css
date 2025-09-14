@@ -1,67 +1,92 @@
 @import "tailwindcss";
 
-/* Custom Scrollbar Styling */
+/* Base body styles */
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #F3F4F6; /* light gray */
+  color: #0F172A; /* dark text */
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 0;
+}
+
+/* Dark mode triggered by data-theme="dark" attribute */
+:where([data-theme="dark"], [data-theme="dark"] *) body,
+:where([data-theme="dark"], [data-theme="dark"] *) {
+  background-color: #1E293B; /* dark surface */
+  color: #F9FAFB; /* light text */
+}
+
+/* Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(14, 165, 164, 0.6); /* teal 500 with opacity */
-  border-radius: 4px;
+  background-color: #2563EBAA;
+  border-radius: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
-/* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(14, 165, 164, 0.6) transparent;
+  scrollbar-color: #2563EBAA transparent;
 }
 
-/* Global typography and spacing adjustments */
-body {
-  font-family: 'Inter', sans-serif;
-  line-height: 1.5;
-  background-color: #F8FAFC; /* surface background */
-  color: #0F172A; /* primary text */
-  font-size: 16px;
-}
-
-/* Utility classes overrides for accessibility and consistent hit area */
-button, input, select, textarea {
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid #2563EB;
   outline-offset: 2px;
 }
 
-a:focus, button:focus, input:focus, textarea:focus {
-  outline: 2px solid #6366F1; /* indigo accent for focus */
-  outline-offset: 2px;
-}
-
-/* Dark mode styles */
-.dark body {
-  background-color: #0F172A; /* slate-900 surface */
-  color: #F8FAFC; /* text light */
-}
-
-/* Badge customization */
+/* Badges */
 .badge-unread {
-  background-color: #0EA5A4;
-  color: #FFFFFF;
-  font-weight: 700;
+  background-color: #2563EB;
+  color: white;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 9999px;
 }
 
 .badge-roleAdmin {
-  background-color: #EF4444;
-  color: #FFFFFF;
+  background-color: #DC2626;
+  color: white;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 9999px;
 }
 
 .badge-roleMod {
-  background-color: #6366F1;
-  color: #FFFFFF;
+  background-color: #2563EB;
+  color: white;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 9999px;
 }
 
 .badge-roleMember {
   background-color: #64748B;
-  color: #FFFFFF;
+  color: white;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 9999px;
+}
+
+/* Buttons */
+button {
+  cursor: pointer;
+  font-weight: 600;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

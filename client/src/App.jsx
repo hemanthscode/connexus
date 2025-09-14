@@ -10,7 +10,7 @@ import Profile from './pages/Profile.jsx'
 function AppRoutes({ darkMode, toggleDarkMode }) {
   const { user, loading } = useAuth()
 
-  if (loading) return <div className="text-center text-teal-600 mt-20">Loading...</div>
+  if (loading) return <div className="text-center text-blue-600 mt-20">Loading...</div>
 
   return (
     <Routes>
@@ -29,17 +29,20 @@ function AppRoutes({ darkMode, toggleDarkMode }) {
 export default function App() {
   const [darkMode, setDarkMode] = useState(() => {
     try {
-      const stored = localStorage.getItem('darkMode')
-      return stored !== null ? JSON.parse(stored) : true
+      const saved = localStorage.getItem('darkMode')
+      return saved !== null ? JSON.parse(saved) : false
     } catch {
-      return true
+      return false
     }
   })
 
   useEffect(() => {
     const root = document.documentElement
-    if (darkMode) root.classList.add('dark')
-    else root.classList.remove('dark')
+    if (darkMode) {
+      root.setAttribute('data-theme', 'dark')
+    } else {
+      root.removeAttribute('data-theme')
+    }
     localStorage.setItem('darkMode', JSON.stringify(darkMode))
   }, [darkMode])
 
