@@ -1,3 +1,4 @@
+// src/hooks/useSocket.js
 import { useEffect } from 'react'
 
 export default function useSocket(socket, event, callback) {

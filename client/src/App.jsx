@@ -10,7 +10,12 @@ import Profile from './pages/Profile.jsx'
 function AppRoutes({ darkMode, toggleDarkMode }) {
   const { user, loading } = useAuth()
 
-  if (loading) return <div className="text-center text-blue-600 mt-20">Loading...</div>
+  if (loading)
+    return (
+      <div className="text-center text-[var(--color-primary)] mt-20 font-semibold text-lg">
+        Loading...
+      </div>
+    )
 
   return (
     <Routes>

@@ -1,3 +1,4 @@
+// connexus-server/middleware/cors.js
 import cors from 'cors'
 import { config } from '../config.js'
 
@@ -11,7 +12,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization']
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
 }
 
 export default cors(corsOptions)

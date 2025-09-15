@@ -3,7 +3,12 @@ import ChatWindow from '../components/layout/ChatWindow.jsx'
 
 export default function ChatDashboard({ darkMode, toggleDarkMode }) {
   return (
-    <div className={`flex min-h-screen ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+    <div
+      className={`flex min-h-screen ${
+        darkMode ? 'bg-backgroundDark text-textLight' : 'bg-[var(--color-background-light)] text-[var(--color-text-dark)]'
+      }`}
+      role="application"
+    >
       <Sidebar />
       <ChatWindow darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
     </div>

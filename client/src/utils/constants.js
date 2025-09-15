@@ -1,3 +1,4 @@
+// src/utils/constants.js
 export const SOCKET_EVENTS = {
   NEW_MESSAGE: 'new_message',
   UPDATE_MESSAGE: 'update_message',
@@ -11,5 +12,7 @@ export const SOCKET_EVENTS = {
   TYPING_START: 'typing_start',
   TYPING_STOP: 'typing_stop',
   NOTIFICATION_PUSH: 'notification_push',
-  HEARTBEAT_PING: 'heartbeat_ping'
+  HEARTBEAT_PING: 'heartbeat_ping',
 }
+
+export const APP_NAME = 'Connexus'

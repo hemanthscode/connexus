@@ -1,3 +1,4 @@
+// connexus-server/routes/chat.js
 import express from 'express'
 import {
   getConversations,
@@ -5,7 +6,7 @@ import {
   sendMessage,
   markAsRead,
   createDirectConversation,
-  searchUsers
+  searchUsers,
 } from '../controllers/chatController.js'
 import { protect } from '../middleware/auth.js'
 

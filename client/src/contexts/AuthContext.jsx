@@ -1,9 +1,11 @@
-import React, { createContext, useState, useEffect, useContext, useRef } from 'react'
+// src/contexts/AuthContext.jsx
+import React, { createContext, useState, useEffect, useRef, useContext } from 'react'
 import * as authService from '../services/authService.js'
 
 const AuthContext = createContext()
+
 const PROFILE_FETCH_COOLDOWN = 10000 // 10 seconds cooldown
-const LOGIN_COOLDOWN = 10000 // 10 seconds cooldown to prevent rapid logins
+const LOGIN_COOLDOWN = 10000 // 10 seconds cooldown
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('connexus_token'))
@@ -28,9 +30,9 @@ export function AuthProvider({ children }) {
         return
       }
       lastFetchRef.current = now
-
       setLoading(true)
       setError(null)
+
       try {
         const profileUser = await authService.fetchProfile(token)
         setUser(profileUser)
@@ -61,9 +63,9 @@ export function AuthProvider({ children }) {
     }
     setLoginLocked(true)
     lastLoginAttemptRef.current = now
-
     setLoading(true)
     setError(null)
+
     try {
       const res = await authService.login(email, password)
       setToken(res.token)

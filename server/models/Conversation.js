@@ -1,28 +1,34 @@
+// connexus-server/models/Conversation.js
 import mongoose from 'mongoose'
 
-const conversationSchema = new mongoose.Schema({
-  type: { type: String, enum: ['direct', 'group'], required: true, default: 'direct' },
-  name: { type: String, maxlength: 100, trim: true },
-  description: { type: String, maxlength: 500 },
-  participants: [{
-    user: { type: mongoose.Schema.ObjectId, ref: 'User', required: true },
-    joinedAt: { type: Date, default: Date.now },
-    role: { type: String, enum: ['admin', 'moderator', 'member'], default: 'member' },
-    lastRead: { type: Date, default: Date.now }
-  }],
-  lastMessage: {
-    content: String,
-    sender: { type: mongoose.Schema.ObjectId, ref: 'User' },
-    timestamp: { type: Date, default: Date.now }
+const conversationSchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ['direct', 'group'], required: true, default: 'direct' },
+    name: { type: String, maxlength: 100, trim: true },
+    description: { type: String, maxlength: 500 },
+    participants: [
+      {
+        user: { type: mongoose.Schema.ObjectId, ref: 'User', required: true },
+        joinedAt: { type: Date, default: Date.now },
+        role: { type: String, enum: ['admin', 'moderator', 'member'], default: 'member' },
+        lastRead: { type: Date, default: Date.now },
+      },
+    ],
+    lastMessage: {
+      content: String,
+      sender: { type: mongoose.Schema.ObjectId, ref: 'User' },
+      timestamp: { type: Date, default: Date.now },
+    },
+    avatar: { type: String, default: null },
+    settings: {
+      allowNewMembers: { type: Boolean, default: true },
+      muteNotifications: { type: Boolean, default: false },
+    },
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: mongoose.Schema.ObjectId, ref: 'User', required: true },
   },
-  avatar: { type: String, default: null },
-  settings: {
-    allowNewMembers: { type: Boolean, default: true },
-    muteNotifications: { type: Boolean, default: false }
-  },
-  isActive: { type: Boolean, default: true },
-  createdBy: { type: mongoose.Schema.ObjectId, ref: 'User', required: true }
-}, { timestamps: true })
+  { timestamps: true }
+)
 
 conversationSchema.index({ 'participants.user': 1 })
 conversationSchema.index({ createdAt: -1 })
@@ -33,11 +39,11 @@ conversationSchema.virtual('participantCount').get(function () {
 })
 
 conversationSchema.methods.hasParticipant = function (userId) {
-  return this.participants.some(p => p.user.toString() === userId.toString())
+  return this.participants.some((p) => p.user.toString() === userId.toString())
 }
 
 conversationSchema.methods.getParticipant = function (userId) {
-  return this.participants.find(p => p.user.toString() === userId.toString())
+  return this.participants.find((p) => p.user.toString() === userId.toString())
 }
 
 conversationSchema.methods.updateLastMessage = function (content, senderId) {

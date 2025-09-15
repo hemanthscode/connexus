@@ -4,9 +4,15 @@ let socket = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 10
 const RECONNECT_BASE_DELAY = 1000
+const MAX_RECONNECT_DELAY = 30000
 
 let outboundQueue = []
 let isConnected = false
+
+function getReconnectDelay(attempts) {
+  const delay = Math.min(MAX_RECONNECT_DELAY, RECONNECT_BASE_DELAY * 2 ** attempts)
+  return delay * (0.8 + Math.random() * 0.4) // jitter 80%-120%
+}
 
 function createSocket(token) {
   const newSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
@@ -38,10 +44,14 @@ function attemptReconnect() {
     console.error('Max reconnect attempts reached.')
     return
   }
-  const delay = RECONNECT_BASE_DELAY * 2 ** reconnectAttempts
-  reconnectAttempts++
+  const token = socket?.auth?.token
+  if (!token) {
+    console.error('No token available for reconnect')
+    return
+  }
+  const delay = getReconnectDelay(reconnectAttempts++)
   setTimeout(() => {
-    socket = createSocket(socket.auth?.token)
+    socket = createSocket(token)
   }, delay)
 }
 

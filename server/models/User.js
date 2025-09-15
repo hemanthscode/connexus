@@ -1,22 +1,26 @@
+// connexus-server/models/User.js
 import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
 
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: true, maxlength: 50, trim: true },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^\S+@\S+\.\S+$/, 'Please provide valid email']
+const userSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, maxlength: 50, trim: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      match: [/^\S+@\S+\.\S+$/, 'Please provide valid email'],
+    },
+    password: { type: String, required: true, minlength: 6, select: false },
+    avatar: { type: String, default: null },
+    status: { type: String, enum: ['online', 'away', 'offline'], default: 'online' },
+    lastSeen: { type: Date, default: Date.now },
+    isActive: { type: Boolean, default: true },
   },
-  password: { type: String, required: true, minlength: 6, select: false },
-  avatar: { type: String, default: null },
-  status: { type: String, enum: ['online', 'away', 'offline'], default: 'online' },
-  lastSeen: { type: Date, default: Date.now },
-  isActive: { type: Boolean, default: true }
-}, { timestamps: true })
+  { timestamps: true }
+)
 
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next()

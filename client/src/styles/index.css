@@ -1,21 +1,80 @@
 @import "tailwindcss";
 
-/* Base body styles */
+/* Color variables for light theme */
+:root {
+  --color-primary: #2563EB;
+  --color-primary-hover: #1E40AF;
+  --color-background-light: #F3F4F6;
+  --color-text-dark: #0F172A;
+  --color-text-muted: #64748B;
+
+  --color-error: #DC2626;
+
+  --color-badge-unread-bg: var(--color-primary);
+  --color-badge-unread-text: #ffffff;
+
+  --color-badge-roleAdmin-bg: var(--color-error);
+  --color-badge-roleAdmin-text: #ffffff;
+
+  --color-badge-roleMod-bg: var(--color-primary);
+  --color-badge-roleMod-text: #ffffff;
+
+  --color-badge-roleMember-bg: #64748B;
+  --color-badge-roleMember-text: #ffffff;
+
+  --color-status-online: #22C55E;
+  --color-status-away: #FBBF24;
+  --color-status-offline: #94A3B8;
+
+  --color-scrollbar-thumb: #2563EBAA;
+
+  --color-button-bg: var(--color-primary);
+  --color-button-bg-hover: var(--color-primary-hover);
+  --color-button-disabled-opacity: 0.5;
+}
+
+/* Dark theme overrides */
+[data-theme="dark"] {
+  --color-primary: #60A5FA;
+  --color-primary-hover: #2563EB;
+  --color-background-light: #1E293B;
+  --color-text-dark: #F9FAFB;
+  --color-text-muted: #94A3B8;
+
+  --color-error: #F87171;
+
+  --color-badge-unread-bg: var(--color-primary);
+  --color-badge-unread-text: #ffffff;
+
+  --color-badge-roleAdmin-bg: var(--color-error);
+  --color-badge-roleAdmin-text: #ffffff;
+
+  --color-badge-roleMod-bg: var(--color-primary);
+  --color-badge-roleMod-text: #ffffff;
+
+  --color-badge-roleMember-bg: #475569;
+  --color-badge-roleMember-text: #ffffff;
+
+  --color-status-online: #22C55E;
+  --color-status-away: #FBBF24;
+  --color-status-offline: #64748B;
+
+  --color-scrollbar-thumb: #60A5FAAA;
+
+  --color-button-bg: var(--color-primary);
+  --color-button-bg-hover: var(--color-primary-hover);
+  --color-button-disabled-opacity: 0.5;
+}
+
+/* Apply background and text color */
 body {
   font-family: 'Inter', system-ui, sans-serif;
-  background-color: #F3F4F6; /* light gray */
-  color: #0F172A; /* dark text */
+  background-color: var(--color-background-light);
+  color: var(--color-text-dark);
   font-size: 16px;
   line-height: 1.5;
   margin: 0;
   padding: 0;
-}
-
-/* Dark mode triggered by data-theme="dark" attribute */
-:where([data-theme="dark"], [data-theme="dark"] *) body,
-:where([data-theme="dark"], [data-theme="dark"] *) {
-  background-color: #1E293B; /* dark surface */
-  color: #F9FAFB; /* light text */
 }
 
 /* Scrollbars */
@@ -24,7 +83,7 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: #2563EBAA;
+  background-color: var(--color-scrollbar-thumb);
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {
@@ -32,19 +91,19 @@ body {
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2563EBAA transparent;
+  scrollbar-color: var(--color-scrollbar-thumb) transparent;
 }
 
 /* Focus ring */
 :focus-visible {
-  outline: 2px solid #2563EB;
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
-/* Badges */
+/* Badge classes */
 .badge-unread {
-  background-color: #2563EB;
-  color: white;
+  background-color: var(--color-badge-unread-bg);
+  color: var(--color-badge-unread-text);
   font-weight: 600;
   font-size: 0.75rem;
   padding: 2px 7px;
@@ -52,8 +111,8 @@ body {
 }
 
 .badge-roleAdmin {
-  background-color: #DC2626;
-  color: white;
+  background-color: var(--color-badge-roleAdmin-bg);
+  color: var(--color-badge-roleAdmin-text);
   font-weight: 600;
   font-size: 0.75rem;
   padding: 2px 7px;
@@ -61,8 +120,8 @@ body {
 }
 
 .badge-roleMod {
-  background-color: #2563EB;
-  color: white;
+  background-color: var(--color-badge-roleMod-bg);
+  color: var(--color-badge-roleMod-text);
   font-weight: 600;
   font-size: 0.75rem;
   padding: 2px 7px;
@@ -70,8 +129,8 @@ body {
 }
 
 .badge-roleMember {
-  background-color: #64748B;
-  color: white;
+  background-color: var(--color-badge-roleMember-bg);
+  color: var(--color-badge-roleMember-text);
   font-weight: 600;
   font-size: 0.75rem;
   padding: 2px 7px;
@@ -84,9 +143,15 @@ button {
   font-weight: 600;
   border-radius: 9999px;
   transition: background-color 0.2s ease, color 0.2s ease;
+  background-color: var(--color-button-bg);
+  color: white;
+}
+
+button:hover:not(:disabled) {
+  background-color: var(--color-button-bg-hover);
 }
 
 button:disabled {
-  opacity: 0.6;
+  opacity: var(--color-button-disabled-opacity);
   cursor: not-allowed;
 }

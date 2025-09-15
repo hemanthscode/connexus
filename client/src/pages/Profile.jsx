@@ -1,3 +1,4 @@
+// src/pages/Profile.jsx
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import * as userService from '../services/userService.js'
@@ -15,14 +16,20 @@ export default function Profile() {
 
   useEffect(() => {
     if (user) {
-      setForm({ name: user.name, email: user.email, status: user.status || '', avatar: user.avatar || '' })
+      setForm({
+        name: user.name,
+        email: user.email,
+        status: user.status || '',
+        avatar: user.avatar || '',
+      })
     }
   }, [user])
 
-  const handleChange = (e) => setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
-  const handlePasswordChange = (e) => setPassData(prev => ({ ...prev, [e.target.name]: e.target.value }))
+  const handleChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+  const handlePasswordChange = (e) =>
+    setPassData((prev) => ({ ...prev, [e.target.name]: e.target.value }))
 
-  const handleProfileUpdate = async e => {
+  const handleProfileUpdate = async (e) => {
     e.preventDefault()
     setMessage(null)
     setLoading(true)
@@ -36,7 +43,7 @@ export default function Profile() {
     }
   }
 
-  const handlePasswordUpdate = async e => {
+  const handlePasswordUpdate = async (e) => {
     e.preventDefault()
     setPassMsg(null)
     setLoading(true)
@@ -52,22 +59,48 @@ export default function Profile() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center px-6 py-10">
-      <section className="bg-white dark:bg-gray-800 rounded-lg p-8 w-full max-w-md space-y-6 shadow-lg text-gray-900 dark:text-gray-100">
+    <main className="min-h-screen bg-backgroundLight dark:bg-backgroundDark flex flex-col items-center justify-center px-6 py-10">
+      <section className="bg-white dark:bg-gray-800 rounded-lg p-8 w-full max-w-md space-y-6 shadow-lg text-textDark dark:text-textLight">
         <div className="flex flex-col items-center space-y-4">
           <Avatar src={form.avatar} alt={form.name} size={120} status={form.status} />
           <h1 className="text-2xl font-bold">{form.name}</h1>
         </div>
-        <form onSubmit={handleProfileUpdate} className="space-y-4">
-          <Input name="name" value={form.name} onChange={handleChange} placeholder="Full Name" disabled={loading} />
-          <Input name="email" value={form.email} onChange={handleChange} placeholder="Email" disabled={loading} />
-          <Input name="status" value={form.status} onChange={handleChange} placeholder="Status" disabled={loading} />
-          <Input name="avatar" value={form.avatar} onChange={handleChange} placeholder="Avatar URL" disabled={loading} />
+        <form onSubmit={handleProfileUpdate} className="space-y-4" aria-label="Update profile form">
+          <Input
+            name="name"
+            value={form.name}
+            onChange={handleChange}
+            placeholder="Full Name"
+            disabled={loading}
+          />
+          <Input
+            name="email"
+            value={form.email}
+            onChange={handleChange}
+            placeholder="Email"
+            disabled={loading}
+          />
+          <Input
+            name="status"
+            value={form.status}
+            onChange={handleChange}
+            placeholder="Status"
+            disabled={loading}
+          />
+          <Input
+            name="avatar"
+            value={form.avatar}
+            onChange={handleChange}
+            placeholder="Avatar URL"
+            disabled={loading}
+          />
           {message && <p className="text-green-600">{message}</p>}
-          <Button type="submit" disabled={loading}>{loading ? 'Updating...' : 'Update Profile'}</Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? 'Updating...' : 'Update Profile'}
+          </Button>
         </form>
 
-        <form onSubmit={handlePasswordUpdate} className="space-y-4">
+        <form onSubmit={handlePasswordUpdate} className="space-y-4" aria-label="Change password form">
           <h2 className="text-lg font-semibold">Change Password</h2>
           <Input
             type="password"
@@ -86,10 +119,14 @@ export default function Profile() {
             disabled={loading}
           />
           {passMsg && <p className="text-green-600">{passMsg}</p>}
-          <Button type="submit" disabled={loading}>{loading ? 'Changing...' : 'Change Password'}</Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? 'Changing...' : 'Change Password'}
+          </Button>
         </form>
 
-        <Button onClick={logout} className="w-full bg-red-600 hover:bg-red-700">Logout</Button>
+        <Button onClick={logout} className="w-full bg-red-600 hover:bg-red-700">
+          Logout
+        </Button>
       </section>
     </main>
   )

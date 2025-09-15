@@ -1,3 +1,4 @@
+// src/services/userService.js
 const API_BASE = import.meta.env.VITE_API_AUTH_BASE_URL || 'http://localhost:5000/api/auth'
 
 async function parseResponse(res) {
@@ -15,7 +16,7 @@ export async function updateProfile(data, token) {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(data),
   })
   return parseResponse(res)
 }
@@ -27,17 +28,7 @@ export async function changePassword(data, token) {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(data)
-  })
-  return parseResponse(res)
-}
-
-export async function searchUsers(query, token) {
-  const url = new URL(`${API_BASE.replace('/auth', '')}/chat/users/search`)
-  url.searchParams.set('q', query)
-
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` }
+    body: JSON.stringify(data),
   })
   return parseResponse(res)
 }
