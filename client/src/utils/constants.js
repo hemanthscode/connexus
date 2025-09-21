@@ -1,18 +1,23 @@
-// src/utils/constants.js
-export const SOCKET_EVENTS = {
-  NEW_MESSAGE: 'new_message',
-  UPDATE_MESSAGE: 'update_message',
-  DELETE_MESSAGE: 'delete_message',
-  MARK_MESSAGE_READ: 'mark_message_read',
-  CONVERSATION_UPDATE: 'conversation_update',
-  BADGE_UPDATE: 'conversation_badge_update',
-  USER_ONLINE: 'user_online',
-  USER_OFFLINE: 'user_offline',
-  USER_STATUS: 'user_status',
-  TYPING_START: 'typing_start',
-  TYPING_STOP: 'typing_stop',
-  NOTIFICATION_PUSH: 'notification_push',
-  HEARTBEAT_PING: 'heartbeat_ping',
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+export const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000'
+export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Connexus'
+
+export const MESSAGE_TYPES = {
+  TEXT: 'text',
+  IMAGE: 'image',
+  FILE: 'file',
+  SYSTEM: 'system'
 }
 
-export const APP_NAME = 'Connexus'
+export const USER_STATUS = {
+  ONLINE: 'online',
+  AWAY: 'away',
+  OFFLINE: 'offline'
+}
+
+export const ROUTES = {
+  LOGIN: '/login',
+  REGISTER: '/register',
+  CHAT: '/chat',
+  PROFILE: '/profile'
+}

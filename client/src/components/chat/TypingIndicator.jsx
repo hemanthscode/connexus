@@ -1,41 +1,23 @@
-export default function TypingIndicator() {
-  return (
-    <div
-      className="inline-flex items-center space-x-1 bg-gray-300 dark:bg-gray-700 rounded-full px-3 py-1 w-16 justify-center shadow-md"
-      aria-label="Typing indicator"
-      role="status"
-      aria-live="polite"
-      style={{ userSelect: 'none' }}
-    >
-      <span className="typing-dot animate-bounce rounded-full bg-gray-600 dark:bg-gray-300 w-2 h-2" />
-      <span className="typing-dot animate-bounce animation-delay-150 rounded-full bg-gray-600 dark:bg-gray-300 w-2 h-2" />
-      <span className="typing-dot animate-bounce animation-delay-300 rounded-full bg-gray-600 dark:bg-gray-300 w-2 h-2" />
-      <style>
-        {`
-          .typing-dot {
-            display: inline-block;
-          }
-          .animate-bounce {
-            animation: bounce 1.4s infinite ease-in-out;
-          }
-          .animation-delay-150 {
-            animation-delay: 0.15s;
-          }
-          .animation-delay-300 {
-            animation-delay: 0.3s;
-          }
-          @keyframes bounce {
-            0%, 80%, 100% {
-              transform: scale(0.8);
-              opacity: 0.6;
-            }
-            40% {
-              transform: scale(1);
-              opacity: 1;
-            }
-          }
-        `}
-      </style>
-    </div>
-  )
-}
+import React from 'react'
+import { motion } from 'framer-motion'
+
+const TypingIndicator = () => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    className="flex items-center space-x-1 px-4 py-2 bg-gray-800 rounded max-w-xs"
+  >
+    {[...Array(3)].map((_, i) => (
+      <motion.span
+        key={i}
+        className="bg-cyan-400 rounded-full w-3 h-3"
+        animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+        transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.3 }}
+      />
+    ))}
+    <span className="text-gray-400 italic text-xs select-none">Someone is typing...</span>
+  </motion.div>
+)
+
+export default TypingIndicator
