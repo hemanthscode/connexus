@@ -1,4 +1,4 @@
-import express from 'express'
+import express from 'express';
 import {
   getConversations,
   getMessages,
@@ -6,18 +6,18 @@ import {
   markAsRead,
   createDirectConversation,
   searchUsers,
-} from '../controllers/chatController.js'
-import { protect } from '../middleware/auth.js'
+} from '../controllers/chatController.js';
+import { protect } from '../middleware/auth.js';
 
-const router = express.Router()
+const router = express.Router();
 
-router.use(protect)
+router.use(protect);
 
-router.get('/conversations', getConversations)
-router.post('/conversations/direct', createDirectConversation)
-router.get('/conversations/:id/messages', getMessages)
-router.put('/conversations/:id/read', markAsRead)
-router.post('/messages', sendMessage)
-router.get('/users/search', searchUsers)
+router.get('/conversations', getConversations);
+router.post('/conversations/direct', createDirectConversation);
+router.get('/conversations/:id/messages', getMessages);
+router.put('/conversations/:id/read', markAsRead);
+router.post('/messages', sendMessage);
+router.get('/users/search', searchUsers);
 
-export default router
+export default router;

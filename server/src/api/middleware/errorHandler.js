@@ -1,4 +1,9 @@
-export const errorHandler = (err, req, res, next) => {
+/**
+ * Express error handler middleware.
+ * Logs errors and sends response with message.
+ */
+const errorHandler = (err, req, res, next) => {
+  // Log structured error info with essential request context
   console.error(
     JSON.stringify({
       message: err.message,
@@ -7,12 +12,16 @@ export const errorHandler = (err, req, res, next) => {
       method: req.method,
       timestamp: new Date().toISOString(),
     })
-  )
+  );
 
-  res.status(err.statusCode || 500).json({
+  // Distinguish operational errors vs system errors by statusCode convention
+  const status = err.statusCode || 500;
+  const isOperational = status < 500;
+
+  res.status(status).json({
     success: false,
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
-  })
-}
+    message: (process.env.NODE_ENV === 'development' || isOperational) ? err.message : 'Internal server error',
+  });
+};
 
-export default errorHandler
+export default errorHandler;

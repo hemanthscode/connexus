@@ -1,53 +1,17 @@
-import { motion } from 'framer-motion'
-import { Link } from 'react-router-dom'
-import { Home, MessageCircle } from 'lucide-react'
+import React from 'react';
+import { Link } from 'react-router-dom';
 
-const NotFoundPage = () => {
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
-        className="text-center"
-      >
-        <div className="card-glass p-12 max-w-md mx-auto">
-          <motion.div
-            animate={{ 
-              rotateY: [0, 360],
-              scale: [1, 1.1, 1]
-            }}
-            transition={{ 
-              duration: 2,
-              repeat: Infinity,
-              repeatType: "reverse"
-            }}
-            className="mb-8"
-          >
-            <MessageCircle className="h-24 w-24 text-neon-blue mx-auto neon-glow" />
-          </motion.div>
-          
-          <h1 className="text-6xl font-bold text-white mb-4">404</h1>
-          <h2 className="text-2xl font-semibold text-white mb-4">Page Not Found</h2>
-          <p className="text-gray-400 mb-8">
-            The page you're looking for doesn't exist or has been moved.
-          </p>
-          
-          <div className="space-y-4">
-            <Link to="/chat" className="btn-primary w-full flex items-center justify-center space-x-2">
-              <MessageCircle className="h-5 w-5" />
-              <span>Go to Chat</span>
-            </Link>
-            
-            <Link to="/login" className="btn-ghost w-full flex items-center justify-center space-x-2">
-              <Home className="h-5 w-5" />
-              <span>Back to Login</span>
-            </Link>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  )
-}
+const NotFound = () => (
+  <div className="flex flex-col items-center justify-center h-screen bg-gray-50 text-gray-700 space-y-4">
+    <h1 className="text-6xl font-bold">404</h1>
+    <p className="text-xl">Oops! Page not found.</p>
+    <Link
+      to="/"
+      className="px-6 py-3 bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+    >
+      Go Home
+    </Link>
+  </div>
+);
 
-export default NotFoundPage
+export default NotFound;

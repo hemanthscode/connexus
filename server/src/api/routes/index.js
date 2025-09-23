@@ -1,10 +1,10 @@
-import express from 'express'
-import authRoutes from './auth.js'
-import chatRoutes from './chat.js'
+import express from 'express';
+import authRoutes from './auth.js';
+import chatRoutes from './chat.js';
 
-const router = express.Router()
+const router = express.Router();
 
-router.use('/auth', authRoutes)
-router.use('/chat', chatRoutes)
+router.use('/auth', authRoutes);
+router.use('/chat', chatRoutes);
 
-export default router
+export default router;
