@@ -28,7 +28,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Rate limit specific auth paths
 app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/me', authLimiter);
+app.use('/api/users/me', authLimiter);
 
 // General rate limiter for other API routes
 app.use('/api', generalLimiter);

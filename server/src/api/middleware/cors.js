@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { config } from '../../config/index.js';
+import { config } from '../config/index.js';
 
 const allowedOrigins = [
   config.CLIENT_URL,
@@ -9,7 +9,7 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // allow non-browser requests like curl/postman
+    if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error('CORS not allowed'));
   },

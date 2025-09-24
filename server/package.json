@@ -1,14 +1,30 @@
 {
   "name": "connexus-server",
   "version": "1.0.0",
-  "description": "Connexus Chat Application Backend",
-  "main": "src/app.js",
+  "description": "Connexus Chat Application Backend - Production Ready",
+  "main": "src/server.js",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "seed": "node src/utils/seedData.js"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "echo \"Linting not configured\"",
+    "build": "echo \"No build step required\"",
+    "seed": "node src/api/utils/seedData.js"
   },
+  "keywords": [
+    "chat",
+    "real-time",
+    "socket.io",
+    "nodejs",
+    "express",
+    "mongodb",
+    "jwt",
+    "rest-api",
+    "websocket"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -26,13 +42,16 @@
   "devDependencies": {
     "nodemon": "^3.0.1"
   },
-  "keywords": [
-    "chat",
-    "real-time",
-    "socket.io",
-    "nodejs",
-    "express"
-  ],
-  "author": "Your Name",
-  "license": "MIT"
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hemanthscode/connexus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hemanthscode/connexus/issues"
+  },
+  "homepage": "https://github.com/hemanthscode/connexus#readme"
 }

@@ -2,8 +2,6 @@ import express from 'express';
 import {
   register,
   login,
-  getMe,
-  updateProfile,
   changePassword,
   logout,
 } from '../controllers/authController.js';
@@ -12,11 +10,11 @@ import { authLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
+// Public routes
 router.post('/register', register);
 router.post('/login', authLimiter, login);
 
-router.get('/me', protect, authLimiter, getMe);
-router.put('/me', protect, updateProfile);
+// Protected auth routes
 router.put('/password', protect, changePassword);
 router.post('/logout', protect, logout);
 

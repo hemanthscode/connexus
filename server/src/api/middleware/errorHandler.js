@@ -3,7 +3,6 @@
  * Logs errors and sends response with message.
  */
 const errorHandler = (err, req, res, next) => {
-  // Log structured error info with essential request context
   console.error(
     JSON.stringify({
       message: err.message,
@@ -14,7 +13,6 @@ const errorHandler = (err, req, res, next) => {
     })
   );
 
-  // Distinguish operational errors vs system errors by statusCode convention
   const status = err.statusCode || 500;
   const isOperational = status < 500;
 
