@@ -1,21 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  ArrowLeft,
-  Phone, 
-  Video, 
-  Search, 
-  MoreVertical,
-  Info,
-  Settings,
-  UserPlus,
-  Pin,
-  Archive,
-  Trash2,
-  Star,
-  Volume2,
-  VolumeX,
-  Users
+  ArrowLeft, Phone, Video, Search, MoreVertical, Info, Settings, UserPlus,
+  Pin, Archive, Trash2, Star, Volume2, VolumeX, Users
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import Button from '../ui/Button.jsx'
@@ -23,6 +10,13 @@ import Dropdown, { DropdownItem, DropdownSeparator } from '../ui/Dropdown.jsx'
 import { useAuth } from '@/hooks/useAuth.jsx'
 import { useOnlineUsers } from '@/hooks/useOnlineUsers.jsx'
 import { formatLastSeen } from '@/utils/formatters.js'
+
+// Configuration constants
+const HEADER_CONFIG = {
+  MAX_VISIBLE_PARTICIPANTS: 3,
+  AVATAR_SIZE: 'w-10 h-10',
+  PARTICIPANT_AVATAR_SIZE: 'w-6 h-6'
+}
 
 const ConversationHeader = ({
   conversation,
@@ -47,10 +41,10 @@ const ConversationHeader = ({
   
   const [showParticipants, setShowParticipants] = useState(false)
 
-  // Get conversation info
-  const getConversationInfo = useCallback(() => {
-    if (!conversation) return null
+  if (!conversation) return null
 
+  // Memoized conversation info
+  const conversationInfo = useMemo(() => {
     if (conversation.type === 'group') {
       return {
         name: conversation.name || 'Unnamed Group',
@@ -61,10 +55,7 @@ const ConversationHeader = ({
       }
     }
 
-    // Direct conversation
-    const otherParticipant = conversation.participants?.find(
-      p => p.user._id !== user?._id
-    )
+    const otherParticipant = conversation.participants?.find(p => p.user._id !== user?._id)
     
     if (!otherParticipant) {
       return {
@@ -82,96 +73,74 @@ const ConversationHeader = ({
     return {
       name: otherParticipant.user.name || 'Unknown User',
       avatar: otherParticipant.user.avatar,
-      subtitle: isOnline 
-        ? 'Active now' 
-        : formatLastSeen(otherParticipant.user.lastSeen),
+      subtitle: isOnline ? 'Active now' : formatLastSeen(otherParticipant.user.lastSeen),
       isOnline,
       canCall: true
     }
-  }, [conversation, user, getUserOnlineStatus])
+  }, [conversation, user?._id, getUserOnlineStatus])
 
-  const info = getConversationInfo()
-
-  // Menu items
-  const getMenuItems = useCallback(() => {
-    if (!conversation) return []
-
-    const items = [
-      {
-        label: 'Conversation Info',
-        icon: <Info className="w-4 h-4" />,
-        onClick: onInfo
-      },
-      {
-        label: 'Search Messages',
-        icon: <Search className="w-4 h-4" />,
-        onClick: onSearch
-      }
+  // Memoized menu items
+  const menuItems = useMemo(() => {
+    const baseItems = [
+      { label: 'Conversation Info', icon: <Info className="w-4 h-4" />, onClick: onInfo },
+      { label: 'Search Messages', icon: <Search className="w-4 h-4" />, onClick: onSearch },
+      { label: conversation.isPinned ? 'Unpin Chat' : 'Pin Chat', icon: <Pin className="w-4 h-4" />, onClick: onPin },
+      { label: conversation.isMuted ? 'Unmute' : 'Mute', icon: conversation.isMuted ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />, onClick: onMute },
+      { label: 'Star Chat', icon: <Star className="w-4 h-4" />, onClick: () => {/* Handle star */} }
     ]
 
-    // Conversation actions
-    items.push(
-      {
-        label: conversation.isPinned ? 'Unpin Chat' : 'Pin Chat',
-        icon: <Pin className="w-4 h-4" />,
-        onClick: onPin
-      },
-      {
-        label: conversation.isMuted ? 'Unmute' : 'Mute',
-        icon: conversation.isMuted ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />,
-        onClick: onMute
-      },
-      {
-        label: 'Star Chat',
-        icon: <Star className="w-4 h-4" />,
-        onClick: () => {/* Handle star */}
-      }
-    )
-
-    // Group-specific actions
     if (conversation.type === 'group') {
-      items.push(
+      baseItems.push(
         { type: 'separator' },
-        {
-          label: 'Add Participants',
-          icon: <UserPlus className="w-4 h-4" />,
-          onClick: onAddParticipants
-        },
-        {
-          label: 'Group Settings',
-          icon: <Settings className="w-4 h-4" />,
-          onClick: onSettings
-        }
+        { label: 'Add Participants', icon: <UserPlus className="w-4 h-4" />, onClick: onAddParticipants },
+        { label: 'Group Settings', icon: <Settings className="w-4 h-4" />, onClick: onSettings }
       )
     }
 
-    items.push(
+    baseItems.push(
       { type: 'separator' },
-      {
-        label: 'Archive Chat',
-        icon: <Archive className="w-4 h-4" />,
-        onClick: onArchive
-      },
-      {
-        label: 'Delete Chat',
-        icon: <Trash2 className="w-4 h-4" />,
-        onClick: onDelete,
-        variant: 'danger'
-      }
+      { label: 'Archive Chat', icon: <Archive className="w-4 h-4" />, onClick: onArchive },
+      { label: 'Delete Chat', icon: <Trash2 className="w-4 h-4" />, onClick: onDelete, variant: 'danger' }
     )
 
-    return items
+    return baseItems
   }, [conversation, onInfo, onSearch, onPin, onMute, onAddParticipants, onSettings, onArchive, onDelete])
 
-  if (!conversation || !info) {
-    return (
+  // Render avatar with proper sizing and indicators
+  const renderAvatar = (src, name, isMain = false) => {
+    const avatarClass = isMain ? HEADER_CONFIG.AVATAR_SIZE : HEADER_CONFIG.PARTICIPANT_AVATAR_SIZE
+    
+    return src ? (
+      <img
+        src={src}
+        alt={name}
+        className={clsx(avatarClass, 'rounded-full', isMain && 'ring-2 ring-gray-600/30')}
+      />
+    ) : (
       <div className={clsx(
-        'glass-dark border-b border-gray-700/50 backdrop-blur-xl',
-        'px-4 py-3 h-16 flex items-center',
-        className
+        avatarClass,
+        'rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center',
+        isMain && 'ring-2 ring-gray-600/30'
       )}>
-        <ConversationHeaderSkeleton />
+        <span className={clsx('text-white font-semibold', isMain ? 'text-sm' : 'text-xs')}>
+          {name.charAt(0).toUpperCase()}
+        </span>
       </div>
+    )
+  }
+
+  if (!conversationInfo) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={clsx(
+          'glass-dark border-b border-gray-700/50 backdrop-blur-xl px-4 py-3 h-16 flex items-center',
+          className
+        )}
+      >
+        <ConversationHeaderSkeleton />
+      </motion.div>
     )
   }
 
@@ -179,6 +148,8 @@ const ConversationHeader = ({
     <motion.header
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
       className={clsx(
         'glass-dark border-b border-gray-700/50 backdrop-blur-xl',
         'px-4 py-3 flex items-center justify-between relative z-30',
@@ -190,12 +161,7 @@ const ConversationHeader = ({
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Back Button (Mobile) */}
         {showBackButton && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="md:hidden w-8 h-8"
-          >
+          <Button variant="ghost" size="icon" onClick={onBack} className="md:hidden w-8 h-8">
             <ArrowLeft className="w-5 h-5" />
           </Button>
         )}
@@ -208,27 +174,14 @@ const ConversationHeader = ({
             className="cursor-pointer"
             onClick={onInfo}
           >
-            {info.avatar ? (
-              <img
-                src={info.avatar}
-                alt={info.name}
-                className="w-10 h-10 rounded-full ring-2 ring-gray-600/30"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center ring-2 ring-gray-600/30">
-                <span className="text-white font-semibold text-sm">
-                  {info.name.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            )}
+            {renderAvatar(conversationInfo.avatar, conversationInfo.name, true)}
           </motion.div>
 
-          {/* Online indicator */}
-          {info.isOnline && conversation.type === 'direct' && (
+          {/* Status indicators */}
+          {conversationInfo.isOnline && conversation.type === 'direct' && (
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-dark-surface" />
           )}
 
-          {/* Group indicator */}
           {conversation.type === 'group' && (
             <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full border-2 border-dark-surface flex items-center justify-center">
               <Users className="w-2 h-2 text-white" />
@@ -243,28 +196,21 @@ const ConversationHeader = ({
             onClick={onInfo}
             whileHover={{ scale: 1.02 }}
           >
-            {info.name}
+            {conversationInfo.name}
           </motion.h2>
           
           <div className="flex items-center gap-2">
             <p className={clsx(
               'text-sm truncate',
-              info.isOnline ? 'text-green-400' : 'text-gray-400'
+              conversationInfo.isOnline ? 'text-green-400' : 'text-gray-400'
             )}>
-              {info.subtitle}
+              {conversationInfo.subtitle}
             </p>
 
-            {/* Conversation indicators */}
             <div className="flex items-center gap-1">
-              {conversation.isPinned && (
-                <Pin className="w-3 h-3 text-yellow-400" />
-              )}
-              {conversation.isMuted && (
-                <VolumeX className="w-3 h-3 text-gray-400" />
-              )}
-              {conversation.isStarred && (
-                <Star className="w-3 h-3 text-yellow-400" />
-              )}
+              {conversation.isPinned && <Pin className="w-3 h-3 text-yellow-400" />}
+              {conversation.isMuted && <VolumeX className="w-3 h-3 text-gray-400" />}
+              {conversation.isStarred && <Star className="w-3 h-3 text-yellow-400" />}
             </div>
           </div>
         </div>
@@ -276,18 +222,18 @@ const ConversationHeader = ({
               onClick={() => setShowParticipants(!showParticipants)}
               className="flex -space-x-2 hover:space-x-0 transition-all duration-200"
             >
-              {conversation.participants.slice(0, 3).map((participant, index) => (
-                <img
-                  key={participant.user._id}
-                  src={participant.user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(participant.user.name || 'U')}&size=24`}
-                  alt={participant.user.name}
-                  className="w-6 h-6 rounded-full border-2 border-dark-surface hover:z-10 transition-all duration-200"
-                  title={participant.user.name}
-                />
+              {conversation.participants.slice(0, HEADER_CONFIG.MAX_VISIBLE_PARTICIPANTS).map((participant, index) => (
+                <div key={participant.user._id} className="hover:z-10 transition-all duration-200">
+                  {renderAvatar(
+                    participant.user.avatar || 
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(participant.user.name || 'U')}&size=24`,
+                    participant.user.name
+                  )}
+                </div>
               ))}
-              {conversation.participants.length > 3 && (
+              {conversation.participants.length > HEADER_CONFIG.MAX_VISIBLE_PARTICIPANTS && (
                 <div className="w-6 h-6 rounded-full bg-gray-600 border-2 border-dark-surface flex items-center justify-center text-xs text-white">
-                  +{conversation.participants.length - 3}
+                  +{conversation.participants.length - HEADER_CONFIG.MAX_VISIBLE_PARTICIPANTS}
                 </div>
               )}
             </button>
@@ -298,25 +244,12 @@ const ConversationHeader = ({
       {/* Right Section */}
       <div className="flex items-center gap-1">
         {/* Call Buttons (Direct chats only) */}
-        {info.canCall && (
+        {conversationInfo.canCall && (
           <>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onCall}
-              className="w-9 h-9"
-              title="Voice call"
-            >
+            <Button variant="ghost" size="icon" onClick={onCall} className="w-9 h-9" title="Voice call">
               <Phone className="w-5 h-5" />
             </Button>
-            
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onVideoCall}
-              className="w-9 h-9"
-              title="Video call"
-            >
+            <Button variant="ghost" size="icon" onClick={onVideoCall} className="w-9 h-9" title="Video call">
               <Video className="w-5 h-5" />
             </Button>
           </>
@@ -336,18 +269,13 @@ const ConversationHeader = ({
         {/* More Options */}
         <Dropdown
           trigger={
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-9 h-9"
-              title="More options"
-            >
+            <Button variant="ghost" size="icon" className="w-9 h-9" title="More options">
               <MoreVertical className="w-5 h-5" />
             </Button>
           }
           placement="bottom-end"
         >
-          {getMenuItems().map((item, index) => (
+          {menuItems.map((item, index) => (
             item.type === 'separator' ? (
               <DropdownSeparator key={index} />
             ) : (
@@ -375,22 +303,15 @@ const ConversationHeader = ({
           >
             <div className="flex flex-wrap gap-2">
               {conversation.participants?.map((participant) => (
-                <div
-                  key={participant.user._id}
-                  className="flex items-center gap-2 glass rounded-lg px-3 py-2"
-                >
-                  <img
-                    src={participant.user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(participant.user.name || 'U')}&size=24`}
-                    alt={participant.user.name}
-                    className="w-6 h-6 rounded-full"
-                  />
-                  <span className="text-sm text-white">
-                    {participant.user.name}
-                  </span>
+                <div key={participant.user._id} className="flex items-center gap-2 glass rounded-lg px-3 py-2">
+                  {renderAvatar(
+                    participant.user.avatar || 
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(participant.user.name || 'U')}&size=24`,
+                    participant.user.name
+                  )}
+                  <span className="text-sm text-white">{participant.user.name}</span>
                   {participant.role === 'admin' && (
-                    <span className="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded">
-                      Admin
-                    </span>
+                    <span className="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded">Admin</span>
                   )}
                 </div>
               ))}

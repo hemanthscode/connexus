@@ -1,9 +1,30 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import Header from '../ui/Header.jsx'
 import Sidebar from '../ui/Sidebar.jsx'
 import { useToast } from '../ui/Toast.jsx'
+
+// Configuration constants
+const LAYOUT_CONFIG = {
+  SIDEBAR_WIDTH: 320,
+  MOBILE_BREAKPOINT: 1024,
+  CONNECTION_TOAST_DURATION: 2000,
+  ANIMATION_DURATION: 0.3
+}
+
+const CONNECTION_STATUS_CONFIG = {
+  connecting: {
+    color: 'bg-yellow-500/95',
+    icon: 'spinner',
+    text: 'Reconnecting...'
+  },
+  disconnected: {
+    color: 'bg-red-500/95', 
+    icon: 'dot',
+    text: 'No internet connection'
+  }
+}
 
 const AppLayout = ({
   children,
@@ -22,162 +43,192 @@ const AppLayout = ({
   headerProps = {},
   ...props
 }) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [sidebarSection, setSidebarSection] = useState('chats')
-  const [searchValue, setSearchValue] = useState('')
-  const [isMobile, setIsMobile] = useState(false)
+  // Consolidated state
+  const [state, setState] = useState({
+    sidebarOpen: true,
+    sidebarSection: 'chats',
+    isMobile: false
+  })
   
   const toast = useToast()
 
-  // Check if mobile
+  // Memoized responsive logic
+  const responsiveConfig = useMemo(() => {
+    const checkMobile = () => window.innerWidth < LAYOUT_CONFIG.MOBILE_BREAKPOINT
+    return { checkMobile }
+  }, [])
+
+  // Check mobile and set initial state
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024)
-      if (window.innerWidth >= 1024) {
-        setSidebarOpen(true)
-      }
+    const updateLayout = () => {
+      const isMobile = responsiveConfig.checkMobile()
+      setState(prev => ({
+        ...prev,
+        isMobile,
+        sidebarOpen: isMobile ? false : true
+      }))
     }
     
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
+    updateLayout()
+    window.addEventListener('resize', updateLayout)
     
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
+    return () => window.removeEventListener('resize', updateLayout)
+  }, [responsiveConfig])
 
   // Auto-close sidebar on mobile when conversation is selected
   useEffect(() => {
-    if (isMobile && activeConversationId) {
-      setSidebarOpen(false)
+    if (state.isMobile && activeConversationId) {
+      setState(prev => ({ ...prev, sidebarOpen: false }))
     }
-  }, [activeConversationId, isMobile])
+  }, [activeConversationId, state.isMobile])
 
   // Connection status notifications
   useEffect(() => {
     if (connectionStatus === 'disconnected') {
       toast.error('Connection lost. Trying to reconnect...', { duration: 0 })
     } else if (connectionStatus === 'connected') {
-      toast.success('Connected', { duration: 2000 })
+      toast.success('Connected', { duration: LAYOUT_CONFIG.CONNECTION_TOAST_DURATION })
     }
   }, [connectionStatus, toast])
 
-  const handleSidebarToggle = () => {
-    setSidebarOpen(!sidebarOpen)
-  }
-
-  const handleSidebarClose = () => {
-    setSidebarOpen(false)
-  }
-
-  const handleSearch = () => {
-    if (isMobile) {
-      setSidebarOpen(true)
-    }
-  }
-
-  const mainVariants = {
-    sidebarOpen: {
-      marginLeft: isMobile ? 0 : sidebarOpen ? '320px' : '0px',
-      transition: { duration: 0.3, ease: 'easeInOut' }
+  // Memoized handlers
+  const handlers = useMemo(() => ({
+    handleSidebarToggle: () => {
+      setState(prev => ({ ...prev, sidebarOpen: !prev.sidebarOpen }))
     },
-    sidebarClosed: {
-      marginLeft: 0,
-      transition: { duration: 0.3, ease: 'easeInOut' }
+    handleSidebarClose: () => {
+      setState(prev => ({ ...prev, sidebarOpen: false }))
+    },
+    handleSectionChange: (section) => {
+      setState(prev => ({ ...prev, sidebarSection: section }))
     }
-  }
+  }), [])
+
+  // Sidebar animation config
+  const sidebarAnimation = useMemo(() => ({
+    initial: { 
+      x: state.isMobile ? -LAYOUT_CONFIG.SIDEBAR_WIDTH : 0,
+      opacity: state.isMobile ? 0 : 1 
+    },
+    animate: { x: 0, opacity: 1 },
+    exit: { 
+      x: state.isMobile ? -LAYOUT_CONFIG.SIDEBAR_WIDTH : -LAYOUT_CONFIG.SIDEBAR_WIDTH,
+      opacity: state.isMobile ? 0 : 1 
+    },
+    transition: { duration: LAYOUT_CONFIG.ANIMATION_DURATION, ease: 'easeInOut' }
+  }), [state.isMobile])
+
+  // Render connection status overlay
+  const renderConnectionStatus = useCallback((status) => {
+    const config = CONNECTION_STATUS_CONFIG[status]
+    if (!config) return null
+
+    return (
+      <motion.div
+        className={`fixed top-0 left-0 right-0 z-50 ${config.color} backdrop-blur-sm shadow-lg`}
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        exit={{ y: -100 }}
+        transition={{ duration: LAYOUT_CONFIG.ANIMATION_DURATION }}
+      >
+        <div className="flex items-center justify-center py-3 px-4">
+          {config.icon === 'spinner' ? (
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-transparent border-t-white mr-3" />
+          ) : (
+            <div className="w-2 h-2 rounded-full bg-white mr-3" />
+          )}
+          <span className="text-white text-sm font-medium">{config.text}</span>
+        </div>
+      </motion.div>
+    )
+  }, [])
 
   return (
-    <div className={clsx('h-screen bg-dark-bg flex overflow-hidden', className)} {...props}>
+    <div className={clsx('h-screen bg-dark-bg flex overflow-hidden relative', className)} {...props}>
       {/* Sidebar */}
       <AnimatePresence>
-        <Sidebar
-          isOpen={sidebarOpen}
-          onToggle={handleSidebarToggle}
-          onClose={handleSidebarClose}
-          activeSection={sidebarSection}
-          onSectionChange={setSidebarSection}
-          conversations={conversations}
-          onConversationSelect={onConversationSelect}
-          activeConversationId={activeConversationId}
-          onNewChat={onNewChat}
-          onNewGroup={onNewGroup}
-          user={user}
-          searchValue={searchValue}
-          onSearchChange={setSearchValue}
-          isMobile={isMobile}
-          {...sidebarProps}
-        />
+        {state.sidebarOpen && (
+          <motion.div
+            {...sidebarAnimation}
+            className={clsx(
+              'bg-dark-surface border-r border-gray-700/50',
+              state.isMobile 
+                ? 'fixed top-0 left-0 h-full w-80 z-40 shadow-2xl' 
+                : 'relative w-80 flex-shrink-0'
+            )}
+          >
+            <Sidebar
+              isOpen={true}
+              onToggle={handlers.handleSidebarToggle}
+              onClose={handlers.handleSidebarClose}
+              activeSection={state.sidebarSection}
+              onSectionChange={handlers.handleSectionChange}
+              conversations={conversations}
+              onConversationSelect={onConversationSelect}
+              activeConversationId={activeConversationId}
+              onNewChat={onNewChat}
+              onNewGroup={onNewGroup}
+              user={user}
+              isMobile={state.isMobile}
+              className="h-full"
+              {...sidebarProps}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {state.isMobile && state.sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: LAYOUT_CONFIG.ANIMATION_DURATION }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30"
+            onClick={handlers.handleSidebarClose}
+          />
+        )}
       </AnimatePresence>
 
       {/* Main Content Area */}
-      <motion.div
-        className="flex-1 flex flex-col overflow-hidden"
-        variants={mainVariants}
-        animate={isMobile ? 'sidebarClosed' : (sidebarOpen ? 'sidebarOpen' : 'sidebarClosed')}
-      >
+      <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Header */}
-        <Header
-          user={user}
-          onMenuToggle={handleSidebarToggle}
-          onSearch={handleSearch}
-          onLogout={onLogout}
-          onSettings={onSettings}
-          onProfileClick={onProfileClick}
-          searchValue={searchValue}
-          onSearchChange={setSearchValue}
-          connectionStatus={connectionStatus}
-          {...headerProps}
-        />
+        <div className="flex-shrink-0 z-20 relative">
+          <Header
+            user={user}
+            onMenuToggle={handlers.handleSidebarToggle}
+            onLogout={onLogout}
+            onSettings={onSettings}
+            onProfileClick={onProfileClick}
+            connectionStatus={connectionStatus}
+            sidebarOpen={state.sidebarOpen}
+            isMobile={state.isMobile}
+            {...headerProps}
+          />
+        </div>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-hidden relative">
+        <main className="flex-1 overflow-hidden relative bg-dark-bg">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeConversationId || 'welcome'}
-              className="h-full"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
+              className="h-full w-full"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.2, ease: 'easeInOut' }}
             >
               {children}
             </motion.div>
           </AnimatePresence>
         </main>
-      </motion.div>
+      </div>
 
-      {/* Connection Status Overlay */}
+      {/* Connection Status Overlays */}
       <AnimatePresence>
-        {connectionStatus === 'connecting' && (
-          <motion.div
-            className="fixed top-0 left-0 right-0 z-50 bg-yellow-500/90 backdrop-blur-sm"
-            initial={{ y: -100 }}
-            animate={{ y: 0 }}
-            exit={{ y: -100 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="flex items-center justify-center py-2 px-4">
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-transparent border-t-white mr-2" />
-              <span className="text-white text-sm font-medium">Reconnecting...</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Offline Overlay */}
-      <AnimatePresence>
-        {connectionStatus === 'disconnected' && (
-          <motion.div
-            className="fixed top-0 left-0 right-0 z-50 bg-red-500/90 backdrop-blur-sm"
-            initial={{ y: -100 }}
-            animate={{ y: 0 }}
-            exit={{ y: -100 }}
-            transition={{ duration: 0.3 }}
-          >
-            <div className="flex items-center justify-center py-2 px-4">
-              <span className="text-white text-sm font-medium">No internet connection</span>
-            </div>
-          </motion.div>
-        )}
+        {(connectionStatus === 'connecting' || connectionStatus === 'disconnected') && 
+          renderConnectionStatus(connectionStatus)}
       </AnimatePresence>
     </div>
   )

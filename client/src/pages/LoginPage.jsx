@@ -1,12 +1,42 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Github, Chrome } from 'lucide-react'
-import { clsx } from 'clsx'
+import { Mail, Lock, ArrowRight } from 'lucide-react'
 import AuthLayout from '@/components/layout/AuthLayout.jsx'
 import SocialLogin from '@/components/auth/SocialLogin.jsx'
 import Button from '@/components/ui/Button.jsx'
 import Input from '@/components/ui/Input.jsx'
 import { useLogin } from '@/hooks/useAuth.jsx'
+import { createPasswordToggle, getSocialProviders, getFormAnimationProps } from '@/utils/authHelpers.jsx'
+
+// Configuration constants
+const LOGIN_CONFIG = {
+  TITLE: 'Welcome back',
+  SUBTITLE: 'Sign in to your Connexus account',
+  SUBMIT_TEXT: 'Sign In',
+  FOOTER_TEXT: "Don't have an account?",
+  FOOTER_LINK_TEXT: 'Sign up for free',
+  FOOTER_LINK_TO: '/register'
+}
+
+const FORM_FIELDS = [
+  {
+    name: 'email',
+    label: 'Email',
+    type: 'email',
+    placeholder: 'Enter your email',
+    icon: Mail,
+    required: true
+  },
+  {
+    name: 'password',
+    label: 'Password',
+    type: 'password',
+    placeholder: 'Enter your password',
+    icon: Lock,
+    required: true,
+    hasToggle: true
+  }
+]
 
 const LoginPage = () => {
   const {
@@ -20,58 +50,10 @@ const LoginPage = () => {
     togglePasswordVisibility,
   } = useLogin()
 
-  const formFields = [
-    {
-      name: 'email',
-      label: 'Email',
-      type: 'email',
-      placeholder: 'Enter your email',
-      icon: <Mail className="w-5 h-5" />,
-      value: formData.email,
-      error: validationErrors.email,
-      required: true
-    },
-    {
-      name: 'password',
-      label: 'Password',
-      type: showPassword ? 'text' : 'password',
-      placeholder: 'Enter your password',
-      icon: <Lock className="w-5 h-5" />,
-      rightIcon: (
-        <button
-          type="button"
-          onClick={togglePasswordVisibility}
-          className="text-gray-400 hover:text-gray-300 transition-colors"
-        >
-          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-        </button>
-      ),
-      value: formData.password,
-      error: validationErrors.password,
-      required: true
-    }
-  ]
-
-  const socialProviders = [
-    {
-      name: 'Google',
-      icon: <Chrome className="w-5 h-5" />,
-      color: 'bg-red-500/20 hover:bg-red-500/30 border-red-500/50 text-red-400',
-      onClick: () => {/* Handle Google login */}
-    },
-    {
-      name: 'GitHub',
-      icon: <Github className="w-5 h-5" />,
-      color: 'bg-gray-500/20 hover:bg-gray-500/30 border-gray-500/50 text-gray-400',
-      onClick: () => {/* Handle GitHub login */}
-    }
-  ]
+  const socialProviders = getSocialProviders()
 
   return (
-    <AuthLayout
-      title="Welcome back"
-      subtitle="Sign in to your Connexus account"
-    >
+    <AuthLayout title={LOGIN_CONFIG.TITLE} subtitle={LOGIN_CONFIG.SUBTITLE}>
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Global Error */}
         {error && (
@@ -86,29 +68,33 @@ const LoginPage = () => {
 
         {/* Form Fields */}
         <div className="space-y-4">
-          {formFields.map((field, index) => (
-            <motion.div
-              key={field.name}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                {field.label} {field.required && <span className="text-red-400">*</span>}
-              </label>
-              <Input
-                type={field.type}
-                placeholder={field.placeholder}
-                value={field.value}
-                onChange={(e) => handleInputChange(field.name, e.target.value)}
-                leftIcon={field.icon}
-                rightIcon={field.rightIcon}
-                error={field.error}
-                disabled={isLoading}
-                className="w-full"
-              />
-            </motion.div>
-          ))}
+          {FORM_FIELDS.map((field, index) => {
+            const fieldProps = {
+              type: field.hasToggle && field.name === 'password' 
+                ? (showPassword ? 'text' : 'password') 
+                : field.type,
+              placeholder: field.placeholder,
+              value: formData[field.name],
+              onChange: (e) => handleInputChange(field.name, e.target.value),
+              leftIcon: <field.icon className="w-5 h-5" />,
+              error: validationErrors[field.name],
+              disabled: isLoading,
+              className: "w-full"
+            }
+
+            if (field.hasToggle) {
+              fieldProps.rightIcon = createPasswordToggle(showPassword, togglePasswordVisibility)
+            }
+
+            return (
+              <motion.div key={field.name} {...getFormAnimationProps(index)}>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {field.label} {field.required && <span className="text-red-400">*</span>}
+                </label>
+                <Input {...fieldProps} />
+              </motion.div>
+            )
+          })}
         </div>
 
         {/* Remember Me & Forgot Password */}
@@ -147,7 +133,7 @@ const LoginPage = () => {
             rightIcon={<ArrowRight className="w-5 h-5" />}
             className="w-full"
           >
-            Sign In
+            {LOGIN_CONFIG.SUBMIT_TEXT}
           </Button>
         </motion.div>
 
@@ -171,12 +157,12 @@ const LoginPage = () => {
           transition={{ delay: 0.5 }}
         >
           <p className="text-gray-400">
-            Don't have an account?{' '}
+            {LOGIN_CONFIG.FOOTER_TEXT}{' '}
             <Link
-              to="/register"
+              to={LOGIN_CONFIG.FOOTER_LINK_TO}
               className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
             >
-              Sign up for free
+              {LOGIN_CONFIG.FOOTER_LINK_TEXT}
             </Link>
           </p>
         </motion.div>

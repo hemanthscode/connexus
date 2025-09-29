@@ -1,23 +1,33 @@
-// App Configuration Constants
+// Environment helpers
+const getEnvVar = (key, defaultValue, type = 'string') => {
+  const value = import.meta.env[key] || defaultValue
+  
+  switch (type) {
+    case 'boolean': return value === 'true'
+    case 'number': return parseInt(value, 10) || defaultValue
+    default: return value
+  }
+}
+
+// App Configuration
 export const APP_CONFIG = {
-  NAME: import.meta.env.VITE_APP_NAME || 'Connexus',
-  VERSION: import.meta.env.VITE_APP_VERSION || '1.0.0',
-  DESCRIPTION: import.meta.env.VITE_APP_DESCRIPTION || 'Real-time Chat Application',
-  NODE_ENV: import.meta.env.VITE_NODE_ENV || 'development',
+  NAME: getEnvVar('VITE_APP_NAME', 'Connexus'),
+  VERSION: getEnvVar('VITE_APP_VERSION', '1.0.0'),
+  DESCRIPTION: getEnvVar('VITE_APP_DESCRIPTION', 'Real-time Chat Application'),
+  NODE_ENV: getEnvVar('VITE_NODE_ENV', 'development'),
 }
 
 // API Configuration
 export const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api',
-  SOCKET_URL: import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000',
-  TIMEOUT: 10000,
-  RETRY_ATTEMPTS: 3,
-  RETRY_DELAY: 1000,
+  BASE_URL: getEnvVar('VITE_API_BASE_URL', 'http://localhost:5000/api'),
+  SOCKET_URL: getEnvVar('VITE_SOCKET_URL', 'http://localhost:5000'),
+  TIMEOUT: getEnvVar('VITE_API_TIMEOUT', 10000, 'number'),
+  RETRY_ATTEMPTS: getEnvVar('VITE_RETRY_ATTEMPTS', 3, 'number'),
+  RETRY_DELAY: getEnvVar('VITE_RETRY_DELAY', 1000, 'number'),
 }
 
-// API Endpoints
+// API Endpoints - Organized by feature
 export const API_ENDPOINTS = {
-  // Authentication endpoints
   AUTH: {
     REGISTER: '/auth/register',
     LOGIN: '/auth/login',
@@ -25,42 +35,38 @@ export const API_ENDPOINTS = {
     CHANGE_PASSWORD: '/auth/password',
   },
   
-  // User endpoints
   USERS: {
     ME: '/users/me',
     PROFILE: (userId) => `/users/${userId}`,
     SEARCH: '/users/search',
   },
   
-  // Chat endpoints
   CHAT: {
+    // Conversations
     CONVERSATIONS: '/chat/conversations',
     CONVERSATION_MESSAGES: (id) => `/chat/conversations/${id}/messages`,
+    DIRECT_CONVERSATION: '/chat/conversations/direct',
+    GROUP_CONVERSATION: '/chat/conversations/group',
+    ARCHIVE_CONVERSATION: (id) => `/chat/conversations/${id}/archive`,
+    
+    // Messages
     SEND_MESSAGE: '/chat/messages',
     EDIT_MESSAGE: '/chat/messages/edit',
     DELETE_MESSAGE: (messageId) => `/chat/messages/${messageId}`,
     MARK_READ: (conversationId) => `/chat/conversations/${conversationId}/read`,
     
-    // Direct conversations
-    DIRECT_CONVERSATION: '/chat/conversations/direct',
-    
-    // Group conversations
-    GROUP_CONVERSATION: '/chat/conversations/group',
+    // Group Management
     UPDATE_GROUP: (id) => `/chat/conversations/${id}`,
     ADD_PARTICIPANTS: (id) => `/chat/conversations/${id}/participants`,
     REMOVE_PARTICIPANT: (id, participantId) => `/chat/conversations/${id}/participants/${participantId}`,
     CHANGE_ROLE: (id) => `/chat/conversations/${id}/participants/role`,
-    ARCHIVE_CONVERSATION: (id) => `/chat/conversations/${id}/archive`,
     
-    // Reactions
+    // Reactions & Search
     ADD_REACTION: '/chat/messages/reactions',
     REMOVE_REACTION: '/chat/messages/reactions/remove',
-    
-    // Search
     SEARCH_USERS: '/chat/users/search',
   },
   
-  // Upload endpoints (future use)
   UPLOAD: {
     FILE: '/upload/file',
     AVATAR: '/upload/avatar',
@@ -68,29 +74,29 @@ export const API_ENDPOINTS = {
   }
 }
 
-// Socket.IO Event Names
+// Socket Events - Organized by category
 export const SOCKET_EVENTS = {
-  // Connection events
+  // Connection
   CONNECT: 'connect',
   DISCONNECT: 'disconnect',
   RECONNECT: 'reconnect',
+  PING: 'ping',
+  PONG: 'pong',
   
-  // User presence events
+  // User Presence
   USER_ONLINE: 'user_online',
   USER_OFFLINE: 'user_offline',
   CURRENT_ONLINE_USERS: 'current_online_users',
   USER_STATUS_UPDATED: 'user_status_updated',
   UPDATE_USER_STATUS: 'update_user_status',
   
-  // Conversation events
+  // Conversations
   JOIN_CONVERSATION: 'join_conversation',
   LEAVE_CONVERSATION: 'leave_conversation',
   JOINED_CONVERSATION: 'joined_conversation',
   LEFT_CONVERSATION: 'left_conversation',
-  REQUEST_CONVERSATION_INFO: 'request_conversation_info',
-  CONVERSATION_INFO: 'conversation_info',
   
-  // Message events
+  // Messages
   SEND_MESSAGE: 'send_message',
   NEW_MESSAGE: 'new_message',
   EDIT_MESSAGE: 'edit_message',
@@ -100,118 +106,84 @@ export const SOCKET_EVENTS = {
   MARK_MESSAGE_READ: 'mark_message_read',
   MESSAGE_READ: 'message_read',
   
-  // Typing events
+  // Typing & Reactions
   TYPING_START: 'typing_start',
   TYPING_STOP: 'typing_stop',
   USER_TYPING: 'user_typing',
   USER_STOP_TYPING: 'user_stop_typing',
-  
-  // Reaction events
   ADD_REACTION: 'add_reaction',
   REMOVE_REACTION: 'remove_reaction',
   REACTION_UPDATED: 'reaction_updated',
   
-  // Group events
+  // Groups
   JOIN_GROUP: 'join_group',
   LEAVE_GROUP: 'leave_group',
   USER_JOINED_GROUP: 'user_joined_group',
   USER_LEFT_GROUP: 'user_left_group',
   
-  // Error events
+  // System
   ERROR: 'error',
-  
-  // Ping/Pong for connection health
-  PING: 'ping',
-  PONG: 'pong',
+  REQUEST_CONVERSATION_INFO: 'request_conversation_info',
+  CONVERSATION_INFO: 'conversation_info',
 }
 
 // UI Configuration
 export const UI_CONFIG = {
   // Pagination
-  MESSAGES_PER_PAGE: parseInt(import.meta.env.VITE_MESSAGES_PER_PAGE) || 50,
+  MESSAGES_PER_PAGE: getEnvVar('VITE_MESSAGES_PER_PAGE', 50, 'number'),
   CONVERSATIONS_PER_PAGE: 20,
   USERS_PER_PAGE: 10,
   
-  // Timeouts
-  TYPING_TIMEOUT: parseInt(import.meta.env.VITE_TYPING_TIMEOUT) || 3000,
-  ONLINE_CHECK_INTERVAL: parseInt(import.meta.env.VITE_ONLINE_CHECK_INTERVAL) || 30000,
+  // Timeouts & Intervals
+  TYPING_TIMEOUT: getEnvVar('VITE_TYPING_TIMEOUT', 3000, 'number'),
+  ONLINE_CHECK_INTERVAL: getEnvVar('VITE_ONLINE_CHECK_INTERVAL', 30000, 'number'),
   NOTIFICATION_TIMEOUT: 5000,
   TOAST_TIMEOUT: 4000,
-  
-  // Socket configuration
-  RECONNECT_ATTEMPTS: parseInt(import.meta.env.VITE_RECONNECT_ATTEMPTS) || 5,
-  RECONNECT_INTERVAL: parseInt(import.meta.env.VITE_RECONNECT_INTERVAL) || 2000,
-  
-  // File upload
-  MAX_FILE_SIZE: parseInt(import.meta.env.VITE_MAX_FILE_SIZE) || 10485760, // 10MB
-  ALLOWED_FILE_TYPES: import.meta.env.VITE_ALLOWED_FILE_TYPES || 'image/*,application/pdf,text/*',
-  
-  // Performance
-  MESSAGE_CACHE_SIZE: parseInt(import.meta.env.VITE_MESSAGE_CACHE_SIZE) || 1000,
   DEBOUNCE_DELAY: 300,
   THROTTLE_DELAY: 1000,
   
+  // Socket
+  RECONNECT_ATTEMPTS: getEnvVar('VITE_RECONNECT_ATTEMPTS', 5, 'number'),
+  RECONNECT_INTERVAL: getEnvVar('VITE_RECONNECT_INTERVAL', 2000, 'number'),
+  
+  // Files
+  MAX_FILE_SIZE: getEnvVar('VITE_MAX_FILE_SIZE', 10485760, 'number'), // 10MB
+  ALLOWED_FILE_TYPES: getEnvVar('VITE_ALLOWED_FILE_TYPES', 'image/*,application/pdf,text/*'),
+  
+  // Performance
+  MESSAGE_CACHE_SIZE: getEnvVar('VITE_MESSAGE_CACHE_SIZE', 1000, 'number'),
+  
   // Theme
-  DEFAULT_THEME: import.meta.env.VITE_DEFAULT_THEME || 'dark',
-  ENABLE_THEME_SWITCHER: import.meta.env.VITE_ENABLE_THEME_SWITCHER === 'true',
+  DEFAULT_THEME: getEnvVar('VITE_DEFAULT_THEME', 'dark'),
+  ENABLE_THEME_SWITCHER: getEnvVar('VITE_ENABLE_THEME_SWITCHER', true, 'boolean'),
 }
 
 // Feature Flags
 export const FEATURES = {
-  NOTIFICATIONS: import.meta.env.VITE_ENABLE_NOTIFICATIONS === 'true',
-  FILE_UPLOAD: import.meta.env.VITE_ENABLE_FILE_UPLOAD === 'true',
-  VOICE_MESSAGES: import.meta.env.VITE_ENABLE_VOICE_MESSAGES === 'true',
-  VIDEO_CALLS: import.meta.env.VITE_ENABLE_VIDEO_CALLS === 'true',
-  SCREEN_SHARING: import.meta.env.VITE_ENABLE_SCREEN_SHARING === 'true',
-  LAZY_LOAD_IMAGES: import.meta.env.VITE_LAZY_LOAD_IMAGES === 'true',
-  INFINITE_SCROLL: import.meta.env.VITE_INFINITE_SCROLL === 'true',
+  NOTIFICATIONS: getEnvVar('VITE_ENABLE_NOTIFICATIONS', true, 'boolean'),
+  FILE_UPLOAD: getEnvVar('VITE_ENABLE_FILE_UPLOAD', true, 'boolean'),
+  VOICE_MESSAGES: getEnvVar('VITE_ENABLE_VOICE_MESSAGES', false, 'boolean'),
+  VIDEO_CALLS: getEnvVar('VITE_ENABLE_VIDEO_CALLS', false, 'boolean'),
+  SCREEN_SHARING: getEnvVar('VITE_ENABLE_SCREEN_SHARING', false, 'boolean'),
+  LAZY_LOAD_IMAGES: getEnvVar('VITE_LAZY_LOAD_IMAGES', true, 'boolean'),
+  INFINITE_SCROLL: getEnvVar('VITE_INFINITE_SCROLL', true, 'boolean'),
 }
 
 // Debug Configuration
 export const DEBUG = {
-  ENABLED: import.meta.env.VITE_DEBUG_MODE === 'true',
-  SOCKET_LOGS: import.meta.env.VITE_SHOW_SOCKET_LOGS === 'true',
-  API_LOGS: import.meta.env.VITE_SHOW_API_LOGS === 'true',
+  ENABLED: getEnvVar('VITE_DEBUG_MODE', false, 'boolean'),
+  SOCKET_LOGS: getEnvVar('VITE_SHOW_SOCKET_LOGS', false, 'boolean'),
+  API_LOGS: getEnvVar('VITE_SHOW_API_LOGS', false, 'boolean'),
 }
 
-// User Status Constants
-export const USER_STATUS = {
-  ONLINE: 'online',
-  AWAY: 'away',
-  OFFLINE: 'offline',
-}
+// Enums & Constants
+export const USER_STATUS = { ONLINE: 'online', AWAY: 'away', OFFLINE: 'offline' }
+export const MESSAGE_TYPES = { TEXT: 'text', IMAGE: 'image', FILE: 'file', SYSTEM: 'system' }
+export const MESSAGE_STATUS = { SENDING: 'sending', SENT: 'sent', DELIVERED: 'delivered', READ: 'read', FAILED: 'failed' }
+export const CONVERSATION_TYPES = { DIRECT: 'direct', GROUP: 'group' }
+export const GROUP_ROLES = { ADMIN: 'admin', MODERATOR: 'moderator', MEMBER: 'member' }
 
-// Message Types
-export const MESSAGE_TYPES = {
-  TEXT: 'text',
-  IMAGE: 'image',
-  FILE: 'file',
-  SYSTEM: 'system',
-}
-
-// Message Status
-export const MESSAGE_STATUS = {
-  SENDING: 'sending',
-  SENT: 'sent',
-  DELIVERED: 'delivered',
-  READ: 'read',
-  FAILED: 'failed',
-}
-
-// Conversation Types
-export const CONVERSATION_TYPES = {
-  DIRECT: 'direct',
-  GROUP: 'group',
-}
-
-// Group Roles
-export const GROUP_ROLES = {
-  ADMIN: 'admin',
-  MODERATOR: 'moderator',
-  MEMBER: 'member',
-}
-
-// Local Storage Keys
+// Storage Keys
 export const STORAGE_KEYS = {
   AUTH_TOKEN: 'connexus_auth_token',
   USER_DATA: 'connexus_user_data',
@@ -226,74 +198,43 @@ export const STORAGE_KEYS = {
 
 // Validation Rules
 export const VALIDATION_RULES = {
-  USERNAME: {
-    MIN_LENGTH: 2,
-    MAX_LENGTH: 50,
-  },
-  PASSWORD: {
-    MIN_LENGTH: 6,
-    MAX_LENGTH: 128,
-  },
-  EMAIL: {
-    MAX_LENGTH: 255,
-  },
-  MESSAGE: {
-    MAX_LENGTH: 2000,
-  },
-  GROUP_NAME: {
-    MIN_LENGTH: 1,
-    MAX_LENGTH: 100,
-  },
-  GROUP_DESCRIPTION: {
-    MAX_LENGTH: 500,
-  },
-  BIO: {
-    MAX_LENGTH: 250,
-  },
-  LOCATION: {
-    MAX_LENGTH: 100,
-  },
+  USERNAME: { MIN_LENGTH: 2, MAX_LENGTH: 50 },
+  PASSWORD: { MIN_LENGTH: 6, MAX_LENGTH: 128 },
+  EMAIL: { MAX_LENGTH: 255 },
+  MESSAGE: { MAX_LENGTH: 2000 },
+  GROUP_NAME: { MIN_LENGTH: 1, MAX_LENGTH: 100 },
+  GROUP_DESCRIPTION: { MAX_LENGTH: 500 },
+  BIO: { MAX_LENGTH: 250 },
+  LOCATION: { MAX_LENGTH: 100 },
 }
 
-// Error Messages
-export const ERROR_MESSAGES = {
-  NETWORK_ERROR: 'Network connection error. Please check your internet connection.',
-  SERVER_ERROR: 'Server error occurred. Please try again later.',
-  AUTHENTICATION_ERROR: 'Authentication failed. Please login again.',
-  VALIDATION_ERROR: 'Please check your input and try again.',
-  FILE_TOO_LARGE: `File size must be less than ${UI_CONFIG.MAX_FILE_SIZE / 1048576}MB`,
-  UNSUPPORTED_FILE_TYPE: 'Unsupported file type',
-  CONNECTION_LOST: 'Connection lost. Attempting to reconnect...',
-  RECONNECTION_FAILED: 'Failed to reconnect. Please refresh the page.',
-  MESSAGE_SEND_FAILED: 'Failed to send message. Please try again.',
-  CONVERSATION_NOT_FOUND: 'Conversation not found',
-  USER_NOT_FOUND: 'User not found',
-  UNAUTHORIZED: 'You are not authorized to perform this action',
+// Messages
+export const MESSAGES = {
+  ERROR: {
+    NETWORK: 'Network connection error. Please check your internet connection.',
+    SERVER: 'Server error occurred. Please try again later.',
+    AUTH: 'Authentication failed. Please login again.',
+    VALIDATION: 'Please check your input and try again.',
+    FILE_TOO_LARGE: `File size must be less than ${UI_CONFIG.MAX_FILE_SIZE / 1048576}MB`,
+    UNSUPPORTED_FILE: 'Unsupported file type',
+    CONNECTION_LOST: 'Connection lost. Attempting to reconnect...',
+    RECONNECTION_FAILED: 'Failed to reconnect. Please refresh the page.',
+  },
+  SUCCESS: {
+    LOGIN: 'Successfully logged in',
+    REGISTER: 'Account created successfully',
+    MESSAGE_SENT: 'Message sent',
+    PROFILE_UPDATED: 'Profile updated successfully',
+    PASSWORD_CHANGED: 'Password changed successfully',
+  }
 }
 
-// Success Messages
-export const SUCCESS_MESSAGES = {
-  LOGIN_SUCCESS: 'Successfully logged in',
-  REGISTER_SUCCESS: 'Account created successfully',
-  MESSAGE_SENT: 'Message sent',
-  MESSAGE_EDITED: 'Message edited',
-  MESSAGE_DELETED: 'Message deleted',
-  PROFILE_UPDATED: 'Profile updated successfully',
-  PASSWORD_CHANGED: 'Password changed successfully',
-  GROUP_CREATED: 'Group created successfully',
-  PARTICIPANT_ADDED: 'Participant added to group',
-  PARTICIPANT_REMOVED: 'Participant removed from group',
-  CONVERSATION_ARCHIVED: 'Conversation archived',
-  CONVERSATION_UNARCHIVED: 'Conversation unarchived',
-}
+// UI Constants
+export const EMOJI_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '👏', '🎉', '💯', '🤔', '😍']
+export const ANIMATIONS = { FAST: 150, NORMAL: 300, SLOW: 500, TYPING_INDICATOR: 1500, TOAST: 4000, MODAL: 200 }
+export const BREAKPOINTS = { SM: 640, MD: 768, LG: 1024, XL: 1280, '2XL': 1536 }
 
-// Emoji Reactions (commonly used)
-export const EMOJI_REACTIONS = [
-  '👍', '❤️', '😂', '😮', '😢', '😡',
-  '🔥', '👏', '🎉', '💯', '🤔', '😍'
-]
-
-// Color Themes
+// Theme Configuration
 export const THEMES = {
   DARK: {
     name: 'dark',
@@ -321,21 +262,6 @@ export const THEMES = {
   }
 }
 
-// Animation Durations (in milliseconds)
-export const ANIMATIONS = {
-  FAST: 150,
-  NORMAL: 300,
-  SLOW: 500,
-  TYPING_INDICATOR: 1500,
-  TOAST: 4000,
-  MODAL: 200,
-}
-
-// Breakpoints (matching Tailwind CSS)
-export const BREAKPOINTS = {
-  SM: 640,
-  MD: 768,
-  LG: 1024,
-  XL: 1280,
-  '2XL': 1536,
-}
+// Helper to get error message by key
+export const getErrorMessage = (key) => MESSAGES.ERROR[key] || 'An unexpected error occurred'
+export const getSuccessMessage = (key) => MESSAGES.SUCCESS[key] || 'Operation completed successfully'

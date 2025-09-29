@@ -1,8 +1,67 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
 import { clsx } from 'clsx'
+
+// Animation variants
+const MENU_VARIANTS = {
+  hidden: { opacity: 0, scale: 0.95, y: -10 },
+  visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.15, ease: 'easeOut' } },
+  exit: { opacity: 0, scale: 0.95, y: -10, transition: { duration: 0.1, ease: 'easeIn' } },
+}
+
+// Position calculator utility
+const calculatePosition = (triggerRect, placement = 'bottom-start', offset = 8) => {
+  const { scrollX, scrollY, innerWidth, innerHeight } = window
+  const menuWidth = 200
+  const menuHeight = 300
+  const padding = 16
+
+  let top = 0, left = 0
+
+  // Calculate initial position
+  switch (placement) {
+    case 'bottom-start':
+      top = triggerRect.bottom + scrollY + offset
+      left = triggerRect.left + scrollX
+      break
+    case 'bottom-end':
+      top = triggerRect.bottom + scrollY + offset
+      left = triggerRect.right + scrollX - menuWidth
+      break
+    case 'top-start':
+      top = triggerRect.top + scrollY - menuHeight - offset
+      left = triggerRect.left + scrollX
+      break
+    case 'top-end':
+      top = triggerRect.top + scrollY - menuHeight - offset
+      left = triggerRect.right + scrollX - menuWidth
+      break
+    case 'right-start':
+      top = triggerRect.top + scrollY
+      left = triggerRect.right + scrollX + offset
+      break
+    case 'left-start':
+      top = triggerRect.top + scrollY
+      left = triggerRect.left + scrollX - menuWidth - offset
+      break
+    default:
+      top = triggerRect.bottom + scrollY + offset
+      left = triggerRect.left + scrollX
+  }
+
+  // Adjust for viewport boundaries
+  left = Math.max(padding, Math.min(left, innerWidth - menuWidth - padding))
+  
+  if (top < scrollY + padding) {
+    top = triggerRect.bottom + scrollY + offset
+  } else if (top + menuHeight > scrollY + innerHeight - padding) {
+    top = Math.max(scrollY + padding, triggerRect.top + scrollY - menuHeight - offset)
+  }
+
+  return { top, left }
+}
 
 const Dropdown = ({
   trigger,
@@ -28,159 +87,76 @@ const Dropdown = ({
   const isControlled = controlledIsOpen !== undefined
   const isOpen = isControlled ? controlledIsOpen : internalIsOpen
   
-  const setIsOpen = (open) => {
-    if (!isControlled) {
-      setInternalIsOpen(open)
-    }
+  const setIsOpen = useCallback((open) => {
+    if (!isControlled) setInternalIsOpen(open)
     onOpenChange?.(open)
-  }
-  
-  // Calculate menu position
-  const calculatePosition = () => {
+  }, [isControlled, onOpenChange])
+
+  const updatePosition = useCallback(() => {
     if (!triggerRef.current) return
-    
     const triggerRect = triggerRef.current.getBoundingClientRect()
-    const scrollX = window.scrollX
-    const scrollY = window.scrollY
-    
-    let top = 0
-    let left = 0
-    
-    switch (placement) {
-      case 'bottom-start':
-        top = triggerRect.bottom + scrollY + offset
-        left = triggerRect.left + scrollX
-        break
-      case 'bottom-end':
-        top = triggerRect.bottom + scrollY + offset
-        left = triggerRect.right + scrollX
-        break
-      case 'top-start':
-        top = triggerRect.top + scrollY - offset
-        left = triggerRect.left + scrollX
-        break
-      case 'top-end':
-        top = triggerRect.top + scrollY - offset
-        left = triggerRect.right + scrollX
-        break
-      case 'right-start':
-        top = triggerRect.top + scrollY
-        left = triggerRect.right + scrollX + offset
-        break
-      case 'left-start':
-        top = triggerRect.top + scrollY
-        left = triggerRect.left + scrollX - offset
-        break
-      default:
-        top = triggerRect.bottom + scrollY + offset
-        left = triggerRect.left + scrollX
-    }
-    
-    setPosition({ top, left })
-  }
-  
-  // Handle outside clicks
+    const newPosition = calculatePosition(triggerRect, placement, offset)
+    setPosition(newPosition)
+  }, [placement, offset])
+
+  // Handle clicks and keyboard
   useEffect(() => {
-    if (!closeOnOutsideClick || !isOpen) return
-    
-    const handleClickOutside = (event) => {
-      if (
-        triggerRef.current?.contains(event.target) ||
-        menuRef.current?.contains(event.target)
-      ) {
-        return
-      }
-      setIsOpen(false)
-    }
-    
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen, closeOnOutsideClick])
-  
-  // Handle escape key
-  useEffect(() => {
-    if (!closeOnEscape || !isOpen) return
-    
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
+    if (!isOpen) return
+
+    const handleClickOutside = (e) => {
+      if (closeOnOutsideClick && 
+          !triggerRef.current?.contains(e.target) && 
+          !menuRef.current?.contains(e.target)) {
         setIsOpen(false)
       }
     }
-    
+
+    const handleEscape = (e) => {
+      if (closeOnEscape && e.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
     document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [isOpen, closeOnEscape])
-  
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen, closeOnOutsideClick, closeOnEscape, setIsOpen])
+
   // Update position when opened
   useEffect(() => {
-    if (isOpen) {
-      calculatePosition()
+    if (!isOpen) return
+
+    updatePosition()
+
+    const handleResize = () => updatePosition()
+    window.addEventListener('resize', handleResize)
+    window.addEventListener('scroll', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('scroll', handleResize)
     }
-  }, [isOpen, placement])
-  
+  }, [isOpen, updatePosition])
+
   const handleTriggerClick = () => {
-    if (disabled) return
-    setIsOpen(!isOpen)
+    if (!disabled) setIsOpen(!isOpen)
   }
-  
-  const handleMenuClick = (event) => {
-    if (closeOnClick) {
-      setIsOpen(false)
-    }
+
+  const handleMenuClick = () => {
+    if (closeOnClick) setIsOpen(false)
   }
-  
-  const menuVariants = {
-    hidden: {
-      opacity: 0,
-      scale: 0.95,
-      y: placement.startsWith('top') ? 10 : -10,
-    },
-    visible: {
-      opacity: 1,
-      scale: 1,
-      y: 0,
-      transition: {
-        duration: 0.15,
-        ease: 'easeOut',
-      },
-    },
-    exit: {
-      opacity: 0,
-      scale: 0.95,
-      y: placement.startsWith('top') ? 10 : -10,
-      transition: {
-        duration: 0.1,
-        ease: 'easeIn',
-      },
-    },
-  }
-  
-  const menu = isOpen && (
-    <AnimatePresence>
-      <motion.div
-        ref={menuRef}
-        className={clsx(
-          'glass rounded-lg shadow-2xl border border-gray-600/30',
-          'z-50 absolute min-w-[160px] py-2',
-          'backdrop-blur-xl',
-          menuClassName
-        )}
-        style={{
-          top: position.top,
-          left: position.left,
-        }}
-        variants={menuVariants}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
-        onClick={handleMenuClick}
-        {...props}
-      >
-        {children}
-      </motion.div>
-    </AnimatePresence>
-  )
-  
+
+  const menuClass = useMemo(() => clsx(
+    'glass rounded-lg shadow-2xl border border-gray-600/30',
+    'z-50 fixed min-w-[180px] max-w-[280px] py-2',
+    'backdrop-blur-xl max-h-[400px] overflow-y-auto',
+    menuClassName
+  ), [menuClassName])
+
   return (
     <div className={clsx('relative inline-block', className)}>
       {/* Trigger */}
@@ -191,14 +167,31 @@ const Dropdown = ({
       >
         {trigger}
       </div>
-      
+
       {/* Menu Portal */}
-      {menu && createPortal(menu, document.body)}
+      {isOpen && createPortal(
+        <AnimatePresence>
+          <motion.div
+            ref={menuRef}
+            className={menuClass}
+            style={{ top: position.top, left: position.left }}
+            variants={MENU_VARIANTS}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            onClick={handleMenuClick}
+            {...props}
+          >
+            {children}
+          </motion.div>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   )
 }
 
-// Dropdown Item Component
+// Dropdown components
 export const DropdownItem = ({
   children,
   onClick,
@@ -215,7 +208,7 @@ export const DropdownItem = ({
     danger: 'text-red-400 hover:text-red-300 hover:bg-red-500/10',
     success: 'text-green-400 hover:text-green-300 hover:bg-green-500/10',
   }
-  
+
   return (
     <motion.button
       type="button"
@@ -233,53 +226,25 @@ export const DropdownItem = ({
       whileTap={{ scale: 0.98 }}
       {...props}
     >
-      {/* Left Icon */}
-      {leftIcon && (
-        <span className="flex-shrink-0 w-4 h-4">
-          {leftIcon}
-        </span>
-      )}
-      
-      {/* Content */}
-      <span className="flex-1 truncate">
-        {children}
-      </span>
-      
-      {/* Selected Indicator */}
-      {selected && (
-        <Check className="flex-shrink-0 w-4 h-4" />
-      )}
-      
-      {/* Right Icon */}
-      {rightIcon && !selected && (
-        <span className="flex-shrink-0 w-4 h-4">
-          {rightIcon}
-        </span>
-      )}
+      {leftIcon && <span className="flex-shrink-0 w-4 h-4">{leftIcon}</span>}
+      <span className="flex-1 truncate">{children}</span>
+      {selected && <Check className="flex-shrink-0 w-4 h-4" />}
+      {rightIcon && !selected && <span className="flex-shrink-0 w-4 h-4">{rightIcon}</span>}
     </motion.button>
   )
 }
 
-// Dropdown Separator Component
-export const DropdownSeparator = ({ className = '' }) => {
-  return (
-    <div className={clsx('my-1 h-px bg-gray-600/30', className)} />
-  )
-}
+export const DropdownSeparator = ({ className = '' }) => (
+  <div className={clsx('my-1 h-px bg-gray-600/30', className)} />
+)
 
-// Dropdown Label Component
-export const DropdownLabel = ({ children, className = '' }) => {
-  return (
-    <div className={clsx(
-      'px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider',
-      className
-    )}>
-      {children}
-    </div>
-  )
-}
+export const DropdownLabel = ({ children, className = '' }) => (
+  <div className={clsx('px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider', className)}>
+    {children}
+  </div>
+)
 
-// Select Dropdown Component
+// Select dropdown component
 export const SelectDropdown = ({
   value,
   onChange,
@@ -291,7 +256,7 @@ export const SelectDropdown = ({
   ...props
 }) => {
   const selectedOption = options.find(option => option.value === value)
-  
+
   const trigger = (
     <div className={clsx(
       'input-glass flex items-center justify-between gap-3 cursor-pointer',
@@ -299,23 +264,16 @@ export const SelectDropdown = ({
       disabled && 'cursor-not-allowed opacity-50',
       className
     )}>
-      <span className={clsx(
-        'truncate',
-        selectedOption ? 'text-white' : 'text-gray-400'
-      )}>
+      <span className={clsx('truncate', selectedOption ? 'text-white' : 'text-gray-400')}>
         {selectedOption ? selectedOption.label : placeholder}
       </span>
       <ChevronDown className="w-4 h-4 text-gray-400" />
     </div>
   )
-  
+
   return (
     <div>
-      <Dropdown
-        trigger={trigger}
-        disabled={disabled}
-        {...props}
-      >
+      <Dropdown trigger={trigger} disabled={disabled} {...props}>
         {options.map((option) => (
           <DropdownItem
             key={option.value}
@@ -326,67 +284,63 @@ export const SelectDropdown = ({
           </DropdownItem>
         ))}
       </Dropdown>
-      
-      {error && (
-        <p className="mt-2 text-sm text-red-400">
-          {error}
-        </p>
-      )}
+      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
     </div>
   )
 }
 
-// Context Menu Component
-export const ContextMenu = ({
-  children,
-  items = [],
-  className = '',
-  ...props
-}) => {
+// Context menu component
+export const ContextMenu = ({ children, items = [], className = '', ...props }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
-  
-  const handleContextMenu = (event) => {
-    event.preventDefault()
-    setPosition({ x: event.clientX, y: event.clientY })
+
+  const handleContextMenu = (e) => {
+    e.preventDefault()
+
+    const { clientX: x, clientY: y } = e
+    const { innerWidth, innerHeight } = window
+    const menuWidth = 180
+    const menuHeight = 200
+    const padding = 16
+
+    const adjustedX = Math.max(padding, Math.min(x, innerWidth - menuWidth - padding))
+    const adjustedY = Math.max(padding, Math.min(y, innerHeight - menuHeight - padding))
+
+    setPosition({ x: adjustedX, y: adjustedY })
     setIsOpen(true)
   }
-  
-  const menu = isOpen && (
-    <AnimatePresence>
-      <motion.div
-        className="glass rounded-lg shadow-2xl border border-gray-600/30 z-50 fixed min-w-[160px] py-2 backdrop-blur-xl"
-        style={{
-          top: position.y,
-          left: position.x,
-        }}
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        onClick={() => setIsOpen(false)}
-      >
-        {items.map((item, index) => (
-          item.type === 'separator' ? (
-            <DropdownSeparator key={index} />
-          ) : (
-            <DropdownItem
-              key={index}
-              onClick={item.onClick}
-              variant={item.variant}
-              leftIcon={item.icon}
-            >
-              {item.label}
-            </DropdownItem>
-          )
-        ))}
-      </motion.div>
-    </AnimatePresence>
-  )
-  
+
   return (
     <div className={className} onContextMenu={handleContextMenu} {...props}>
       {children}
-      {menu && createPortal(menu, document.body)}
+      {isOpen && createPortal(
+        <AnimatePresence>
+          <motion.div
+            className="glass rounded-lg shadow-2xl border border-gray-600/30 z-50 fixed min-w-[160px] max-w-[240px] py-2 backdrop-blur-xl max-h-[300px] overflow-y-auto"
+            style={{ top: position.y, left: position.x }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            onClick={() => setIsOpen(false)}
+          >
+            {items.map((item, index) => (
+              item.type === 'separator' ? (
+                <DropdownSeparator key={index} />
+              ) : (
+                <DropdownItem
+                  key={index}
+                  onClick={item.onClick}
+                  variant={item.variant}
+                  leftIcon={item.icon}
+                >
+                  {item.label}
+                </DropdownItem>
+              )
+            ))}
+          </motion.div>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   )
 }

@@ -2,50 +2,82 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { encryptLocalStorageData, decryptLocalStorageData } from '@/utils/encryption.js'
 import { DEBUG } from '@/utils/constants.js'
 
-/**
- * Enhanced localStorage hook with encryption, serialization, and error handling
- */
-export const useLocalStorage = (
-  key, 
-  initialValue = null, 
-  options = {}
-) => {
-  const {
-    encrypt = false,
-    serialize = true,
-    deserialize = true,
-    onError = null,
-    syncAcrossTabs = true
-  } = options
+// Default options
+const DEFAULT_OPTIONS = {
+  encrypt: false,
+  serialize: true,
+  deserialize: true,
+  onError: null,
+  syncAcrossTabs: true
+}
 
+// Common error handler
+const handleError = (error, operation, key, onError) => {
+  if (DEBUG.ENABLED) {
+    console.warn(`Error ${operation} localStorage key "${key}":`, error)
+  }
+  onError?.(error, operation)
+  return error
+}
+
+// Storage operations utility
+const storageOperations = {
+  read: (key, options) => {
+    if (typeof window === 'undefined') return null
+    
+    const item = localStorage.getItem(key)
+    if (!item) return null
+
+    if (options.encrypt) {
+      return decryptLocalStorageData(item)
+    } else if (options.deserialize) {
+      return JSON.parse(item)
+    }
+    return item
+  },
+
+  write: (key, value, options) => {
+    if (typeof window === 'undefined') return
+    
+    if (value === null || value === undefined) {
+      localStorage.removeItem(key)
+      return
+    }
+
+    let stringValue
+    if (options.encrypt) {
+      stringValue = encryptLocalStorageData(value)
+    } else if (options.serialize) {
+      stringValue = JSON.stringify(value)
+    } else {
+      stringValue = value
+    }
+    
+    localStorage.setItem(key, stringValue)
+  },
+
+  remove: (key) => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(key)
+    }
+  },
+
+  clear: () => {
+    if (typeof window !== 'undefined') {
+      localStorage.clear()
+    }
+  }
+}
+
+export const useLocalStorage = (key, initialValue = null, options = {}) => {
+  const config = { ...DEFAULT_OPTIONS, ...options }
+  
   const [storedValue, setStoredValue] = useState(() => {
     try {
-      if (typeof window === 'undefined') {
-        return initialValue
-      }
-
-      const item = localStorage.getItem(key)
-      if (!item) {
-        return initialValue
-      }
-
-      let parsedValue
-      
-      if (encrypt) {
-        parsedValue = decryptLocalStorageData(item)
-      } else if (deserialize) {
-        parsedValue = JSON.parse(item)
-      } else {
-        parsedValue = item
-      }
-
-      return parsedValue !== null ? parsedValue : initialValue
+      const item = storageOperations.read(key, config)
+      return item !== null ? item : initialValue
     } catch (error) {
-      if (DEBUG.ENABLED) {
-        console.warn(`Error reading localStorage key "${key}":`, error)
-      }
-      
-      onError?.(error, 'read')
+      handleError(error, 'read', key, config.onError)
       return initialValue
     }
   })
@@ -53,195 +85,123 @@ export const useLocalStorage = (
   const [error, setError] = useState(null)
   const valueRef = useRef(storedValue)
 
-  // Update ref when value changes
   useEffect(() => {
     valueRef.current = storedValue
   }, [storedValue])
 
-  // Set value function
+  // Main setValue function
   const setValue = useCallback((value) => {
     try {
       setError(null)
-      
-      // Allow value to be a function so we have the same API as useState
       const valueToStore = value instanceof Function ? value(valueRef.current) : value
       
-      // Update state
       setStoredValue(valueToStore)
-      
-      // Update localStorage
-      if (typeof window !== 'undefined') {
-        if (valueToStore === null || valueToStore === undefined) {
-          localStorage.removeItem(key)
-        } else {
-          let stringValue
-          
-          if (encrypt) {
-            stringValue = encryptLocalStorageData(valueToStore)
-          } else if (serialize) {
-            stringValue = JSON.stringify(valueToStore)
-          } else {
-            stringValue = valueToStore
-          }
-          
-          localStorage.setItem(key, stringValue)
-        }
-      }
-    } catch (error) {
-      if (DEBUG.ENABLED) {
-        console.warn(`Error setting localStorage key "${key}":`, error)
-      }
-      
+      storageOperations.write(key, valueToStore, config)
+    } catch (err) {
+      const error = handleError(err, 'write', key, config.onError)
       setError(error)
-      onError?.(error, 'write')
     }
-  }, [key, encrypt, serialize, onError])
+  }, [key, config])
 
-  // Remove value function
-  const removeValue = useCallback(() => {
-    try {
-      setError(null)
-      setStoredValue(initialValue)
-      
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem(key)
+  // Utility functions
+  const utilities = useCallback(() => ({
+    removeValue: () => {
+      try {
+        setError(null)
+        setStoredValue(initialValue)
+        storageOperations.remove(key)
+      } catch (err) {
+        const error = handleError(err, 'remove', key, config.onError)
+        setError(error)
       }
-    } catch (error) {
-      if (DEBUG.ENABLED) {
-        console.warn(`Error removing localStorage key "${key}":`, error)
+    },
+
+    clearAll: () => {
+      try {
+        setError(null)
+        storageOperations.clear()
+      } catch (err) {
+        const error = handleError(err, 'clear', key, config.onError)
+        setError(error)
       }
-      
-      setError(error)
-      onError?.(error, 'remove')
+    },
+
+    getSize: () => {
+      try {
+        if (typeof window === 'undefined') return 0
+        const item = localStorage.getItem(key)
+        return item ? new Blob([item]).size : 0
+      } catch {
+        return 0
+      }
+    },
+
+    exists: () => {
+      try {
+        return typeof window !== 'undefined' && localStorage.getItem(key) !== null
+      } catch {
+        return false
+      }
     }
-  }, [key, initialValue, onError])
+  }), [key, initialValue, config])
 
-  // Clear all localStorage
-  const clearAll = useCallback(() => {
-    try {
-      setError(null)
-      
-      if (typeof window !== 'undefined') {
-        localStorage.clear()
-      }
-    } catch (error) {
-      if (DEBUG.ENABLED) {
-        console.warn('Error clearing localStorage:', error)
-      }
-      
-      setError(error)
-      onError?.(error, 'clear')
-    }
-  }, [onError])
-
-  // Get size of stored value
-  const getSize = useCallback(() => {
-    try {
-      if (typeof window === 'undefined') return 0
-      
-      const item = localStorage.getItem(key)
-      return item ? new Blob([item]).size : 0
-    } catch (error) {
-      if (DEBUG.ENABLED) {
-        console.warn(`Error getting size of localStorage key "${key}":`, error)
-      }
-      return 0
-    }
-  }, [key])
-
-  // Check if key exists
-  const exists = useCallback(() => {
-    try {
-      if (typeof window === 'undefined') return false
-      return localStorage.getItem(key) !== null
-    } catch (error) {
-      if (DEBUG.ENABLED) {
-        console.warn(`Error checking localStorage key "${key}":`, error)
-      }
-      return false
-    }
-  }, [key])
-
-  // Sync across tabs
+  // Cross-tab synchronization
   useEffect(() => {
-    if (!syncAcrossTabs || typeof window === 'undefined') return
+    if (!config.syncAcrossTabs || typeof window === 'undefined') return
 
     const handleStorageChange = (e) => {
-      if (e.key === key && e.newValue !== null) {
-        try {
+      if (e.key !== key) return
+
+      try {
+        if (e.newValue !== null) {
           let newValue
-          
-          if (encrypt) {
+          if (config.encrypt) {
             newValue = decryptLocalStorageData(e.newValue)
-          } else if (deserialize) {
+          } else if (config.deserialize) {
             newValue = JSON.parse(e.newValue)
           } else {
             newValue = e.newValue
           }
-          
           setStoredValue(newValue)
-        } catch (error) {
-          if (DEBUG.ENABLED) {
-            console.warn(`Error syncing localStorage key "${key}" across tabs:`, error)
-          }
-          
-          setError(error)
-          onError?.(error, 'sync')
+        } else {
+          setStoredValue(initialValue)
         }
-      } else if (e.key === key && e.newValue === null) {
-        setStoredValue(initialValue)
+      } catch (err) {
+        const error = handleError(err, 'sync', key, config.onError)
+        setError(error)
       }
     }
 
     window.addEventListener('storage', handleStorageChange)
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-    }
-  }, [key, encrypt, deserialize, initialValue, syncAcrossTabs, onError])
+    return () => window.removeEventListener('storage', handleStorageChange)
+  }, [key, config, initialValue])
+
+  const utilityFunctions = utilities()
 
   return {
     value: storedValue,
     setValue,
-    removeValue,
-    clearAll,
     error,
-    exists,
-    getSize
+    ...utilityFunctions
   }
 }
 
-/**
- * Hook for managing multiple localStorage keys as an object
- */
+// Multi-key localStorage object hook
 export const useLocalStorageObject = (keyPrefix, initialState = {}, options = {}) => {
   const [state, setState] = useState(() => {
     if (typeof window === 'undefined') return initialState
 
     const stored = {}
-    
     for (const [key, defaultValue] of Object.entries(initialState)) {
       try {
         const storageKey = `${keyPrefix}_${key}`
-        const item = localStorage.getItem(storageKey)
-        
-        if (item) {
-          if (options.encrypt) {
-            stored[key] = decryptLocalStorageData(item)
-          } else {
-            stored[key] = JSON.parse(item)
-          }
-        } else {
-          stored[key] = defaultValue
-        }
+        const item = storageOperations.read(storageKey, options)
+        stored[key] = item !== null ? item : defaultValue
       } catch (error) {
-        if (DEBUG.ENABLED) {
-          console.warn(`Error reading localStorage key "${keyPrefix}_${key}":`, error)
-        }
+        handleError(error, 'read', `${keyPrefix}_${key}`, options.onError)
         stored[key] = defaultValue
       }
     }
-    
     return stored
   })
 
@@ -253,22 +213,9 @@ export const useLocalStorageObject = (keyPrefix, initialState = {}, options = {}
       for (const [key, value] of Object.entries(updates)) {
         try {
           const storageKey = `${keyPrefix}_${key}`
-          
-          if (value === null || value === undefined) {
-            localStorage.removeItem(storageKey)
-          } else {
-            const stringValue = options.encrypt 
-              ? encryptLocalStorageData(value)
-              : JSON.stringify(value)
-              
-            localStorage.setItem(storageKey, stringValue)
-          }
+          storageOperations.write(storageKey, value, options)
         } catch (error) {
-          if (DEBUG.ENABLED) {
-            console.warn(`Error setting localStorage key "${keyPrefix}_${key}":`, error)
-          }
-          
-          options.onError?.(error, 'write')
+          handleError(error, 'write', `${keyPrefix}_${key}`, options.onError)
         }
       }
       
@@ -282,15 +229,10 @@ export const useLocalStorageObject = (keyPrefix, initialState = {}, options = {}
       
       for (const key of keys) {
         newState[key] = initialState[key]
-        
         try {
-          localStorage.removeItem(`${keyPrefix}_${key}`)
+          storageOperations.remove(`${keyPrefix}_${key}`)
         } catch (error) {
-          if (DEBUG.ENABLED) {
-            console.warn(`Error removing localStorage key "${keyPrefix}_${key}":`, error)
-          }
-          
-          options.onError?.(error, 'remove')
+          handleError(error, 'remove', `${keyPrefix}_${key}`, options.onError)
         }
       }
       
@@ -300,31 +242,19 @@ export const useLocalStorageObject = (keyPrefix, initialState = {}, options = {}
 
   const clearAll = useCallback(() => {
     setState(initialState)
-    
     for (const key of Object.keys(initialState)) {
       try {
-        localStorage.removeItem(`${keyPrefix}_${key}`)
+        storageOperations.remove(`${keyPrefix}_${key}`)
       } catch (error) {
-        if (DEBUG.ENABLED) {
-          console.warn(`Error removing localStorage key "${keyPrefix}_${key}":`, error)
-        }
-        
-        options.onError?.(error, 'remove')
+        handleError(error, 'remove', `${keyPrefix}_${key}`, options.onError)
       }
     }
   }, [keyPrefix, initialState, options])
 
-  return {
-    state,
-    updateState,
-    removeKeys,
-    clearAll
-  }
+  return { state, updateState, removeKeys, clearAll }
 }
 
-/**
- * Hook for managing localStorage quota and usage
- */
+// Storage quota management hook
 export const useLocalStorageQuota = () => {
   const [quota, setQuota] = useState(null)
   const [usage, setUsage] = useState(null)
@@ -338,7 +268,7 @@ export const useLocalStorageQuota = () => {
         setUsage(estimate.usage)
         setAvailable(estimate.quota - estimate.usage)
       } else {
-        // Fallback: try to estimate localStorage usage
+        // Fallback: estimate localStorage usage
         let totalSize = 0
         for (let key in localStorage) {
           if (localStorage.hasOwnProperty(key)) {
@@ -346,7 +276,7 @@ export const useLocalStorageQuota = () => {
           }
         }
         setUsage(totalSize)
-        setQuota(null) // Unknown quota
+        setQuota(null)
         setAvailable(null)
       }
     } catch (error) {
@@ -361,8 +291,7 @@ export const useLocalStorageQuota = () => {
   }, [checkQuota])
 
   const isQuotaExceeded = useCallback((threshold = 0.9) => {
-    if (!quota || !usage) return false
-    return (usage / quota) > threshold
+    return quota && usage ? (usage / quota) > threshold : false
   }, [quota, usage])
 
   return {
@@ -375,9 +304,7 @@ export const useLocalStorageQuota = () => {
   }
 }
 
-/**
- * Hook for temporary localStorage (auto-expires)
- */
+// Temporary storage with expiration
 export const useTemporaryStorage = (key, initialValue = null, expirationMinutes = 60) => {
   const [value, setValue] = useState(() => {
     try {

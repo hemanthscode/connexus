@@ -1,190 +1,116 @@
 import { format, formatDistance, isToday, isYesterday, isThisWeek, isThisYear } from 'date-fns'
 
-/**
- * Format timestamp for message display
- * @param {string|Date} timestamp - Timestamp to format
- * @returns {string} Formatted time
- */
-export const formatMessageTime = (timestamp) => {
-  if (!timestamp) return ''
-  
+// Base date validation and parsing
+const parseDate = (timestamp) => {
+  if (!timestamp) return null
   const date = new Date(timestamp)
+  return isNaN(date.getTime()) ? null : date
+}
+
+// Common time format patterns
+const TIME_FORMATS = {
+  TIME_ONLY: 'HH:mm',
+  DATE_TIME: 'MMM dd HH:mm',
+  FULL_DATE: 'MMM dd, yyyy',
+  FULL_DATE_TIME: 'MMM dd, yyyy HH:mm',
+  WEEKDAY: 'EEE',
+  WEEKDAY_TIME: 'EEE HH:mm',
+  FULL_DATETIME: 'EEEE, MMMM dd, yyyy \'at\' HH:mm'
+}
+
+/**
+ * Core date formatter with consistent logic
+ */
+const formatWithPattern = (timestamp, patterns) => {
+  const date = parseDate(timestamp)
+  if (!date) return ''
+  
   const now = new Date()
   
-  // If invalid date
-  if (isNaN(date.getTime())) return ''
+  if (isToday(date)) return patterns.today || format(date, TIME_FORMATS.TIME_ONLY)
+  if (isYesterday(date)) return patterns.yesterday || `Yesterday ${patterns.showTime ? format(date, TIME_FORMATS.TIME_ONLY) : ''}`
+  if (isThisWeek(date)) return patterns.thisWeek || format(date, patterns.showTime ? TIME_FORMATS.WEEKDAY_TIME : TIME_FORMATS.WEEKDAY)
+  if (isThisYear(date)) return patterns.thisYear || format(date, patterns.showTime ? TIME_FORMATS.DATE_TIME : 'MMM dd')
   
-  // If today, show time only
-  if (isToday(date)) {
-    return format(date, 'HH:mm')
-  }
-  
-  // If yesterday
-  if (isYesterday(date)) {
-    return `Yesterday ${format(date, 'HH:mm')}`
-  }
-  
-  // If this week
-  if (isThisWeek(date)) {
-    return format(date, 'EEE HH:mm')
-  }
-  
-  // If this year
-  if (isThisYear(date)) {
-    return format(date, 'MMM dd HH:mm')
-  }
-  
-  // Full date
-  return format(date, 'MMM dd, yyyy HH:mm')
+  return patterns.default || format(date, patterns.showTime ? TIME_FORMATS.FULL_DATE_TIME : TIME_FORMATS.FULL_DATE)
+}
+
+/**
+ * Format timestamp for message display
+ */
+export const formatMessageTime = (timestamp) => {
+  return formatWithPattern(timestamp, {
+    showTime: true,
+    yesterday: (date) => `Yesterday ${format(date, TIME_FORMATS.TIME_ONLY)}`,
+  })
 }
 
 /**
  * Format timestamp for conversation list
- * @param {string|Date} timestamp - Timestamp to format
- * @returns {string} Formatted time
  */
 export const formatConversationTime = (timestamp) => {
-  if (!timestamp) return ''
-  
-  const date = new Date(timestamp)
-  
-  // If invalid date
-  if (isNaN(date.getTime())) return ''
-  
-  // If today, show time only
-  if (isToday(date)) {
-    return format(date, 'HH:mm')
-  }
-  
-  // If yesterday
-  if (isYesterday(date)) {
-    return 'Yesterday'
-  }
-  
-  // If this week
-  if (isThisWeek(date)) {
-    return format(date, 'EEE')
-  }
-  
-  // If this year
-  if (isThisYear(date)) {
-    return format(date, 'MMM dd')
-  }
-  
-  // Full date
-  return format(date, 'MMM dd, yyyy')
+  return formatWithPattern(timestamp, {
+    yesterday: 'Yesterday',
+    showTime: false,
+  })
 }
 
 /**
  * Format last seen time for user status
- * @param {string|Date} lastSeen - Last seen timestamp
- * @returns {string} Formatted last seen
  */
 export const formatLastSeen = (lastSeen) => {
-  if (!lastSeen) return 'Never'
+  const date = parseDate(lastSeen)
+  if (!date) return 'Never'
   
-  const date = new Date(lastSeen)
   const now = new Date()
-  
-  // If invalid date
-  if (isNaN(date.getTime())) return 'Never'
-  
-  // If within 5 minutes, consider online
   const diffInMinutes = (now - date) / (1000 * 60)
+  
+  // Online threshold
   if (diffInMinutes <= 5) return 'Online'
   
-  // If today
-  if (isToday(date)) {
-    return `Last seen ${format(date, 'HH:mm')}`
-  }
-  
-  // If yesterday
-  if (isYesterday(date)) {
-    return `Last seen yesterday ${format(date, 'HH:mm')}`
-  }
-  
-  // If within a week
-  if (diffInMinutes <= 7 * 24 * 60) {
-    return `Last seen ${format(date, 'EEE HH:mm')}`
-  }
-  
-  // If this year
-  if (isThisYear(date)) {
-    return `Last seen ${format(date, 'MMM dd')}`
-  }
-  
-  // Long time ago
-  return `Last seen ${format(date, 'MMM dd, yyyy')}`
+  return formatWithPattern(lastSeen, {
+    today: (date) => `Last seen ${format(date, TIME_FORMATS.TIME_ONLY)}`,
+    yesterday: (date) => `Last seen yesterday ${format(date, TIME_FORMATS.TIME_ONLY)}`,
+    thisWeek: (date) => `Last seen ${format(date, TIME_FORMATS.WEEKDAY_TIME)}`,
+    thisYear: (date) => `Last seen ${format(date, 'MMM dd')}`,
+    default: (date) => `Last seen ${format(date, TIME_FORMATS.FULL_DATE)}`,
+  })
 }
 
 /**
  * Format relative time (e.g., "2 minutes ago")
- * @param {string|Date} timestamp - Timestamp to format
- * @returns {string} Relative time
  */
 export const formatRelativeTime = (timestamp) => {
-  if (!timestamp) return ''
-  
-  const date = new Date(timestamp)
-  
-  // If invalid date
-  if (isNaN(date.getTime())) return ''
-  
-  return formatDistance(date, new Date(), { addSuffix: true })
+  const date = parseDate(timestamp)
+  return date ? formatDistance(date, new Date(), { addSuffix: true }) : ''
 }
 
 /**
  * Format full date and time
- * @param {string|Date} timestamp - Timestamp to format
- * @returns {string} Full formatted date and time
  */
 export const formatFullDateTime = (timestamp) => {
-  if (!timestamp) return ''
-  
-  const date = new Date(timestamp)
-  
-  // If invalid date
-  if (isNaN(date.getTime())) return ''
-  
-  return format(date, 'EEEE, MMMM dd, yyyy \'at\' HH:mm')
+  const date = parseDate(timestamp)
+  return date ? format(date, TIME_FORMATS.FULL_DATETIME) : ''
 }
 
 /**
  * Format date only
- * @param {string|Date} timestamp - Timestamp to format
- * @returns {string} Formatted date
  */
 export const formatDate = (timestamp) => {
-  if (!timestamp) return ''
-  
-  const date = new Date(timestamp)
-  
-  // If invalid date
-  if (isNaN(date.getTime())) return ''
-  
-  return format(date, 'MMMM dd, yyyy')
+  const date = parseDate(timestamp)
+  return date ? format(date, 'MMMM dd, yyyy') : ''
 }
 
 /**
  * Format time only
- * @param {string|Date} timestamp - Timestamp to format
- * @returns {string} Formatted time
  */
 export const formatTime = (timestamp) => {
-  if (!timestamp) return ''
-  
-  const date = new Date(timestamp)
-  
-  // If invalid date
-  if (isNaN(date.getTime())) return ''
-  
-  return format(date, 'HH:mm')
+  const date = parseDate(timestamp)
+  return date ? format(date, TIME_FORMATS.TIME_ONLY) : ''
 }
 
 /**
  * Format duration in human readable format
- * @param {number} seconds - Duration in seconds
- * @returns {string} Formatted duration
  */
 export const formatDuration = (seconds) => {
   if (!seconds || seconds < 0) return '0:00'
@@ -201,68 +127,34 @@ export const formatDuration = (seconds) => {
 }
 
 /**
- * Check if timestamp is from today
- * @param {string|Date} timestamp - Timestamp to check
- * @returns {boolean} True if from today
+ * Date validation helpers
  */
 export const isFromToday = (timestamp) => {
-  if (!timestamp) return false
-  const date = new Date(timestamp)
-  return !isNaN(date.getTime()) && isToday(date)
+  const date = parseDate(timestamp)
+  return date ? isToday(date) : false
 }
 
-/**
- * Check if timestamp is from yesterday
- * @param {string|Date} timestamp - Timestamp to check
- * @returns {boolean} True if from yesterday
- */
 export const isFromYesterday = (timestamp) => {
-  if (!timestamp) return false
-  const date = new Date(timestamp)
-  return !isNaN(date.getTime()) && isYesterday(date)
+  const date = parseDate(timestamp)
+  return date ? isYesterday(date) : false
 }
 
 /**
- * Get greeting based on current time
- * @returns {string} Greeting message
+ * Get time-based greeting
  */
 export const getTimeBasedGreeting = () => {
   const hour = new Date().getHours()
-  
   if (hour < 12) return 'Good morning'
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
 }
 
 /**
- * Format typing indicator timestamp
- * @param {string|Date} timestamp - When user started typing
- * @returns {string} Formatted typing time
- */
-export const formatTypingTime = (timestamp) => {
-  if (!timestamp) return ''
-  
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffInSeconds = (now - date) / 1000
-  
-  // If invalid date or too old (more than 10 seconds), don't show
-  if (isNaN(date.getTime()) || diffInSeconds > 10) return ''
-  
-  return 'typing...'
-}
-
-/**
- * Create date separators for message lists
- * @param {string|Date} timestamp - Message timestamp
- * @param {string|Date} previousTimestamp - Previous message timestamp
- * @returns {string|null} Date separator text or null
+ * Create date separator for message lists
  */
 export const createDateSeparator = (timestamp, previousTimestamp) => {
-  if (!timestamp) return null
-  
-  const date = new Date(timestamp)
-  if (isNaN(date.getTime())) return null
+  const date = parseDate(timestamp)
+  if (!date) return null
   
   // If no previous timestamp, show separator
   if (!previousTimestamp) {
@@ -271,8 +163,8 @@ export const createDateSeparator = (timestamp, previousTimestamp) => {
     return format(date, 'EEEE, MMMM dd, yyyy')
   }
   
-  const prevDate = new Date(previousTimestamp)
-  if (isNaN(prevDate.getTime())) return null
+  const prevDate = parseDate(previousTimestamp)
+  if (!prevDate) return null
   
   // If same day, no separator needed
   if (format(date, 'yyyy-MM-dd') === format(prevDate, 'yyyy-MM-dd')) {
@@ -286,33 +178,24 @@ export const createDateSeparator = (timestamp, previousTimestamp) => {
 }
 
 /**
- * Format file timestamp for uploads
- * @param {string|Date} timestamp - Upload timestamp
- * @returns {string} Formatted upload time
+ * Format file upload time
  */
 export const formatFileUploadTime = (timestamp) => {
-  if (!timestamp) return ''
+  return formatWithPattern(timestamp, {
+    today: (date) => `Today at ${format(date, TIME_FORMATS.TIME_ONLY)}`,
+    yesterday: (date) => `Yesterday at ${format(date, TIME_FORMATS.TIME_ONLY)}`,
+    thisYear: (date) => format(date, 'MMM dd \'at\' HH:mm'),
+    default: (date) => format(date, 'MMM dd, yyyy \'at\' HH:mm'),
+  })
+}
+
+/**
+ * Format typing indicator (returns empty string if too old)
+ */
+export const formatTypingTime = (timestamp) => {
+  const date = parseDate(timestamp)
+  if (!date) return ''
   
-  const date = new Date(timestamp)
-  
-  // If invalid date
-  if (isNaN(date.getTime())) return ''
-  
-  // If today
-  if (isToday(date)) {
-    return `Today at ${format(date, 'HH:mm')}`
-  }
-  
-  // If yesterday
-  if (isYesterday(date)) {
-    return `Yesterday at ${format(date, 'HH:mm')}`
-  }
-  
-  // If this year
-  if (isThisYear(date)) {
-    return format(date, 'MMM dd \'at\' HH:mm')
-  }
-  
-  // Full date
-  return format(date, 'MMM dd, yyyy \'at\' HH:mm')
+  const diffInSeconds = (new Date() - date) / 1000
+  return diffInSeconds <= 10 ? 'typing...' : ''
 }

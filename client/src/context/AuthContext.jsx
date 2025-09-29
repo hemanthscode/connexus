@@ -1,13 +1,11 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { useAuthStore, useAuthActions, useAuthComputed } from '@/store/authSlice.js'
+import { createContext, useContext, useEffect, useCallback, useMemo, useState } from 'react'
+import useAuthStore from '@/store/authSlice.js'
 import socketService from '@/services/socketService.js'
 import { DEBUG } from '@/utils/constants.js'
 import { useToast } from '@/components/ui/Toast.jsx'
 
-// Create context
 const AuthContext = createContext(null)
 
-// Custom hook to use auth context
 export const useAuthContext = () => {
   const context = useContext(AuthContext)
   if (!context) {
@@ -16,253 +14,299 @@ export const useAuthContext = () => {
   return context
 }
 
-// Auth provider component
 export const AuthProvider = ({ children }) => {
   const authStore = useAuthStore()
-  const authActions = useAuthActions()
-  const authComputed = useAuthComputed()
-  
-  const [isSocketConnected, setIsSocketConnected] = useState(false)
-  const [connectionAttempts, setConnectionAttempts] = useState(0)
-  
   const toast = useToast()
+  
+  // FIXED: Add initialization tracking to prevent premature session checks
+  const [isInitialized, setIsInitialized] = useState(false)
 
-  // Initialize auth on app start
+  // FIXED: Initialize auth on mount with proper tracking
   useEffect(() => {
-    authActions.initialize()
-  }, [authActions])
+    const initializeAuth = async () => {
+      try {
+        if (DEBUG.ENABLED) console.log('🔐 Initializing auth...')
+        
+        await authStore.initialize()
+        setIsInitialized(true)
+        
+        if (DEBUG.ENABLED) {
+          console.log('🔐 Auth initialized:', {
+            isAuthenticated: authStore.isAuthenticated,
+            hasUser: !!authStore.user,
+            hasToken: !!localStorage.getItem('authToken'), // Debug token presence
+            sessionExpiry: authStore.sessionExpiry
+          })
+        }
+      } catch (error) {
+        console.error('Auth initialization failed:', error)
+        setIsInitialized(true) // Still mark as initialized to prevent hanging
+      }
+    }
 
-  // Handle socket connection when user is authenticated
+    initializeAuth()
+  }, [])
+
+  // Handle socket connection lifecycle
   useEffect(() => {
-    const connectSocket = async () => {
-      if (authStore.isAuthenticated && !isSocketConnected && connectionAttempts < 3) {
+    if (!isInitialized) return // FIXED: Wait for initialization
+
+    const handleSocketConnection = async () => {
+      if (authStore.isAuthenticated && authStore.user) {
         try {
-          if (DEBUG.ENABLED) {
-            console.log('Attempting to connect socket...')
+          // FIXED: Pass token to socket service
+          const token = localStorage.getItem('authToken')
+          if (token) {
+            await socketService.initializeSocket(token)
+            authStore.setUserStatus('online')
+            socketService.updateUserStatus('online')
+            if (DEBUG.ENABLED) console.log('🔌 Socket connected with auth')
           }
-
-          await socketService.initializeSocket()
-          setIsSocketConnected(true)
-          setConnectionAttempts(0)
-          
-          if (DEBUG.ENABLED) {
-            console.log('Socket connected successfully')
-          }
-
-          toast.success('Connected to chat server')
         } catch (error) {
-          console.error('Failed to connect socket:', error)
-          setConnectionAttempts(prev => prev + 1)
-          
-          // Retry after delay
-          setTimeout(() => {
-            if (connectionAttempts < 2) {
-              connectSocket()
-            } else {
-              toast.error('Failed to connect to chat server')
-            }
-          }, 2000)
+          console.error('Socket connection failed:', error)
         }
-      }
-    }
-
-    const disconnectSocket = () => {
-      if (isSocketConnected) {
+      } else {
+        if (DEBUG.ENABLED) console.log('🔌 Disconnecting socket (not authenticated)')
         socketService.disconnect()
-        setIsSocketConnected(false)
-        setConnectionAttempts(0)
-        
-        if (DEBUG.ENABLED) {
-          console.log('Socket disconnected')
-        }
       }
     }
 
-    if (authStore.isAuthenticated) {
-      connectSocket()
-    } else {
-      disconnectSocket()
-    }
+    handleSocketConnection()
+  }, [authStore.isAuthenticated, authStore.user, isInitialized])
 
-    return () => {
-      disconnectSocket()
-    }
-  }, [authStore.isAuthenticated, isSocketConnected, connectionAttempts, toast])
-
-  // Auto-logout on session expiry
+  // FIXED: Enhanced session expiry check with debugging and safeguards
   useEffect(() => {
-    if (!authStore.isAuthenticated) return
+    if (!isInitialized || !authStore.isAuthenticated) return
 
-    const checkSessionExpiry = () => {
-      if (authActions.isSessionExpired()) {
-        if (DEBUG.ENABLED) {
-          console.log('Session expired, logging out...')
-        }
+    const checkSession = () => {
+      try {
+        // FIXED: Add comprehensive session validation
+        const token = localStorage.getItem('authToken')
+        const tokenExpiry = localStorage.getItem('tokenExpiry')
+        const currentTime = Date.now()
         
-        toast.warning('Session expired. Please login again.')
-        authActions.logout()
+        if (DEBUG.ENABLED) {
+          console.log('🕒 Session check:', {
+            hasToken: !!token,
+            hasUser: !!authStore.user,
+            tokenExpiry: tokenExpiry ? new Date(parseInt(tokenExpiry)).toISOString() : 'none',
+            currentTime: new Date(currentTime).toISOString(),
+            storeSessionExpiry: authStore.sessionExpiry ? new Date(authStore.sessionExpiry).toISOString() : 'none',
+            isStoreSessionExpired: authStore.isSessionExpired?.()
+          })
+        }
+
+        // FIXED: Multiple validation layers
+        let shouldLogout = false
+        let logoutReason = ''
+
+        // Check 1: No token
+        if (!token) {
+          shouldLogout = true
+          logoutReason = 'No auth token found'
+        }
+        // Check 2: Token expiry from localStorage
+        else if (tokenExpiry && currentTime > parseInt(tokenExpiry)) {
+          shouldLogout = true
+          logoutReason = 'Token expired (localStorage)'
+        }
+        // Check 3: Store session expiry (with safeguard)
+        else if (authStore.isSessionExpired && typeof authStore.isSessionExpired === 'function') {
+          try {
+            if (authStore.isSessionExpired()) {
+              shouldLogout = true
+              logoutReason = 'Session expired (store)'
+            }
+          } catch (error) {
+            console.error('Error checking session expiry:', error)
+            // Don't logout on error - could be a temporary issue
+          }
+        }
+
+        if (shouldLogout) {
+          console.warn(`🚪 Auto-logout triggered: ${logoutReason}`)
+          toast.warning(`Session expired: ${logoutReason}. Please login again.`)
+          authStore.logout()
+        } else if (DEBUG.ENABLED) {
+          console.log('✅ Session valid')
+        }
+
+      } catch (error) {
+        console.error('Session check error:', error)
+        // FIXED: Don't logout on session check errors - could be temporary
       }
     }
 
-    // Check immediately
-    checkSessionExpiry()
-
-    // Check every minute
-    const interval = setInterval(checkSessionExpiry, 60000)
+    // FIXED: Initial check with delay to ensure everything is loaded
+    const initialTimeout = setTimeout(checkSession, 5000)
     
-    return () => clearInterval(interval)
-  }, [authStore.isAuthenticated, authStore.sessionExpiry, authActions, toast])
+    // FIXED: Less frequent checks to prevent issues
+    const interval = setInterval(checkSession, 5 * 60 * 1000) // Check every 5 minutes instead of 1
+    
+    return () => {
+      clearTimeout(initialTimeout)
+      clearInterval(interval)
+    }
+  }, [isInitialized, authStore.isAuthenticated, toast])
 
-  // Update user status on visibility change
+  // User status management
   useEffect(() => {
-    if (!authStore.isAuthenticated) return
+    if (!isInitialized || !authStore.isAuthenticated) return
 
     const handleVisibilityChange = () => {
       const status = document.hidden ? 'away' : 'online'
-      authActions.setUserStatus(status)
-      
-      if (isSocketConnected) {
-        socketService.updateUserStatus(status)
-      }
+      authStore.setUserStatus?.(status)
+      socketService.updateUserStatus?.(status)
+    }
+
+    const handleBeforeUnload = () => {
+      authStore.setUserStatus?.('offline')
+      socketService.updateUserStatus?.('offline')
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [authStore.isAuthenticated, isSocketConnected, authActions])
-
-  // Handle page unload - set offline status
-  useEffect(() => {
-    if (!authStore.isAuthenticated || !isSocketConnected) return
-
-    const handleBeforeUnload = () => {
-      authActions.setUserStatus('offline')
-      socketService.updateUserStatus('offline')
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    
-    return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [authStore.isAuthenticated, isSocketConnected, authActions])
+  }, [isInitialized, authStore.isAuthenticated])
 
-  // Memoized auth functions
-  const login = useCallback(async (credentials) => {
-    const result = await authActions.login(credentials)
-    
-    if (result.success) {
-      toast.success('Welcome back!')
-    } else {
-      toast.error(result.error || 'Login failed')
+  // Enhanced auth actions with toast feedback
+  const enhancedActions = useMemo(() => ({
+    login: async (credentials) => {
+      try {
+        if (DEBUG.ENABLED) console.log('🔐 Attempting login...')
+        const result = await authStore.login(credentials)
+        
+        if (result.success) {
+          if (DEBUG.ENABLED) {
+            console.log('🔐 Login successful:', {
+              hasUser: !!result.user,
+              hasToken: !!result.token,
+              tokenExpiry: result.tokenExpiry ? new Date(result.tokenExpiry).toISOString() : 'none'
+            })
+          }
+          toast.success('Welcome back!')
+        } else {
+          console.error('Login failed:', result.error)
+          toast.error(result.error || 'Login failed')
+        }
+        
+        return result
+      } catch (error) {
+        console.error('Login error:', error)
+        toast.error('Login failed due to an error')
+        return { success: false, error: 'Login failed' }
+      }
+    },
+
+    register: async (userData) => {
+      try {
+        const result = await authStore.register(userData)
+        toast[result.success ? 'success' : 'error'](
+          result.success ? 'Account created successfully!' : result.error || 'Registration failed'
+        )
+        return result
+      } catch (error) {
+        console.error('Register error:', error)
+        toast.error('Registration failed due to an error')
+        return { success: false, error: 'Registration failed' }
+      }
+    },
+
+    logout: async () => {
+      try {
+        if (DEBUG.ENABLED) console.log('🚪 Logging out...')
+        await authStore.logout()
+        toast.info('You have been logged out')
+      } catch (error) {
+        console.error('Logout error:', error)
+      }
+    },
+
+    changePassword: async (passwordData) => {
+      const result = await authStore.changePassword(passwordData)
+      toast[result.success ? 'success' : 'error'](
+        result.success ? 'Password changed successfully' : result.error || 'Password change failed'
+      )
+      return result
+    },
+
+    updateProfile: async (profileData) => {
+      const result = await authStore.updateProfile(profileData)
+      toast[result.success ? 'success' : 'error'](
+        result.success ? 'Profile updated successfully' : result.error || 'Profile update failed'
+      )
+      return result
+    },
+
+    // FIXED: Manual session refresh function
+    refreshSession: async () => {
+      try {
+        if (DEBUG.ENABLED) console.log('🔄 Refreshing session...')
+        const result = await authStore.refreshUser()
+        if (!result.success) {
+          console.warn('Session refresh failed:', result.error)
+        }
+        return result
+      } catch (error) {
+        console.error('Session refresh error:', error)
+        return { success: false, error: 'Session refresh failed' }
+      }
     }
-    
-    return result
-  }, [authActions, toast])
+  }), [authStore, toast])
 
-  const register = useCallback(async (userData) => {
-    const result = await authActions.register(userData)
-    
-    if (result.success) {
-      toast.success('Account created successfully!')
-    } else {
-      toast.error(result.error || 'Registration failed')
-    }
-    
-    return result
-  }, [authActions, toast])
-
-  const logout = useCallback(async () => {
-    await authActions.logout()
-    toast.info('You have been logged out')
-  }, [authActions, toast])
-
-  const changePassword = useCallback(async (passwordData) => {
-    const result = await authActions.changePassword(passwordData)
-    
-    if (result.success) {
-      toast.success('Password changed successfully')
-    } else {
-      toast.error(result.error || 'Password change failed')
-    }
-    
-    return result
-  }, [authActions, toast])
-
-  const updateProfile = useCallback(async (profileData) => {
-    const result = await authActions.updateProfile(profileData)
-    
-    if (result.success) {
-      toast.success('Profile updated successfully')
-    } else {
-      toast.error(result.error || 'Profile update failed')
-    }
-    
-    return result
-  }, [authActions, toast])
-
-  // Get connection status
-  const getConnectionStatus = useCallback(() => {
-    if (!authStore.isAuthenticated) return 'disconnected'
-    if (isSocketConnected) return 'connected'
-    return 'connecting'
-  }, [authStore.isAuthenticated, isSocketConnected])
-
-  // Context value
-  const contextValue = {
-    // Auth state
+  // FIXED: Memoized context value with initialization state
+  const contextValue = useMemo(() => ({
+    // Core auth state
     user: authStore.user,
     isAuthenticated: authStore.isAuthenticated,
     isLoading: authStore.isLoading,
-    isInitializing: authStore.isInitializing,
-    
+    isInitializing: authStore.isInitializing || !isInitialized, // Include local init state
+    isInitialized,
+
     // Loading states
     isLoggingIn: authStore.isLoggingIn,
     isRegistering: authStore.isRegistering,
     isChangingPassword: authStore.isChangingPassword,
-    
+
     // Errors
     error: authStore.error,
     loginError: authStore.loginError,
     registerError: authStore.registerError,
-    
+
     // Session info
     lastLoginAt: authStore.lastLoginAt,
     sessionExpiry: authStore.sessionExpiry,
-    
-    // Settings
     rememberMe: authStore.rememberMe,
     autoLogin: authStore.autoLogin,
-    
+
+    // Enhanced actions
+    ...enhancedActions,
+
+    // Direct store actions (with null checks)
+    clearError: authStore.clearError,
+    setUserStatus: authStore.setUserStatus,
+    updateAvatar: authStore.updateAvatar,
+    refreshUser: authStore.refreshUser,
+    toggleRememberMe: authStore.toggleRememberMe,
+    setAutoLogin: authStore.setAutoLogin,
+
+    // Computed values (with null checks)
+    getUserDisplayName: authStore.getUserDisplayName || (() => ''),
+    getUserInitials: authStore.getUserInitials || (() => ''),
+    hasRole: authStore.hasRole || (() => false),
+    isSessionExpired: authStore.isSessionExpired || (() => false),
+    getSessionTimeRemaining: authStore.getSessionTimeRemaining || (() => 0),
+    isUserOnline: authStore.isUserOnline || (() => false),
+
     // Connection status
-    isSocketConnected,
-    connectionStatus: getConnectionStatus(),
-    
-    // Auth actions
-    login,
-    register,
-    logout,
-    changePassword,
-    updateProfile,
-    
-    // Utility actions
-    clearError: authActions.clearError,
-    setUserStatus: authActions.setUserStatus,
-    updateAvatar: authActions.updateAvatar,
-    refreshUser: authActions.refreshUser,
-    toggleRememberMe: authActions.toggleRememberMe,
-    setAutoLogin: authActions.setAutoLogin,
-    
-    // Computed values
-    getUserDisplayName: authComputed.getUserDisplayName,
-    getUserInitials: authComputed.getUserInitials,
-    hasRole: authComputed.hasRole,
-    getSessionTimeRemaining: authComputed.getSessionTimeRemaining,
-    isUserOnline: authComputed.isUserOnline,
-    isSessionExpired: authActions.isSessionExpired,
-  }
+    connectionStatus: authStore.isAuthenticated 
+      ? (socketService.isSocketConnected?.() ? 'connected' : 'connecting') 
+      : 'disconnected',
+  }), [authStore, enhancedActions, isInitialized])
 
   return (
     <AuthContext.Provider value={contextValue}>
@@ -271,8 +315,4 @@ export const AuthProvider = ({ children }) => {
   )
 }
 
-// Export context for direct access if needed
-export { AuthContext }
-
-// Default export
 export default AuthProvider

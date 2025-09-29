@@ -5,6 +5,24 @@ import Button from '../ui/Button.jsx'
 import { truncateText } from '@/utils/helpers.js'
 import { formatMessageTime } from '@/utils/formatters.js'
 
+// Configuration constants
+const PREVIEW_CONFIG = {
+  COMPACT_MAX_LENGTH: 40,
+  NORMAL_MAX_LENGTH: 60,
+  FULL_MAX_LENGTH: 100,
+  MAX_ATTACHMENTS_PREVIEW: 3,
+  MAX_THREAD_DEPTH: 3
+}
+
+// Message type configurations
+const MESSAGE_TYPES = {
+  image: { text: 'Photo', icon: Image, color: 'text-green-400' },
+  file: { text: 'File', icon: File, color: 'text-blue-400' },
+  voice: { text: 'Voice message', icon: Mic, color: 'text-purple-400' },
+  system: { text: null, icon: null, color: 'text-gray-400' },
+  deleted: { text: 'This message was deleted', icon: null, color: 'text-gray-500' }
+}
+
 const ReplyPreview = ({
   message,
   onCancel,
@@ -17,56 +35,33 @@ const ReplyPreview = ({
 
   const getMessagePreview = () => {
     if (message.isDeleted) {
-      return {
-        text: 'This message was deleted',
-        icon: null,
-        color: 'text-gray-500'
-      }
+      return MESSAGE_TYPES.deleted
     }
 
-    switch (message.type) {
-      case 'image':
-        return {
-          text: message.attachments?.length > 1 
-            ? `${message.attachments.length} images` 
-            : 'Photo',
-          icon: <Image className="w-4 h-4" />,
-          color: 'text-green-400'
-        }
-      
-      case 'file':
-        return {
-          text: message.attachments?.[0]?.name || 'File',
-          icon: <File className="w-4 h-4" />,
-          color: 'text-blue-400'
-        }
-      
-      case 'voice':
-        return {
-          text: 'Voice message',
-          icon: <Mic className="w-4 h-4" />,
-          color: 'text-purple-400'
-        }
-      
-      case 'system':
-        return {
-          text: message.content,
-          icon: null,
-          color: 'text-gray-400'
-        }
-      
-      default:
-        return {
-          text: message.content || 'Message',
-          icon: null,
-          color: 'text-gray-300'
-        }
+    const typeConfig = MESSAGE_TYPES[message.type]
+    if (typeConfig) {
+      if (message.type === 'image' && message.attachments?.length > 1) {
+        return { ...typeConfig, text: `${message.attachments.length} images` }
+      }
+      if (message.type === 'file' && message.attachments?.[0]?.name) {
+        return { ...typeConfig, text: message.attachments[0].name }
+      }
+      if (typeConfig.text) {
+        return typeConfig
+      }
+      return { ...typeConfig, text: message.content }
+    }
+
+    return {
+      text: message.content || 'Message',
+      icon: null,
+      color: 'text-gray-300'
     }
   }
 
   const preview = getMessagePreview()
   const senderName = message.sender?.name || 'Unknown User'
-  const maxLength = compact ? 50 : 100
+  const maxLength = compact ? PREVIEW_CONFIG.COMPACT_MAX_LENGTH : PREVIEW_CONFIG.FULL_MAX_LENGTH
 
   return (
     <motion.div
@@ -89,12 +84,8 @@ const ReplyPreview = ({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-medium text-cyan-400">
-              Replying to
-            </span>
-            <span className="text-xs text-gray-400">
-              {senderName}
-            </span>
+            <span className="text-xs font-medium text-cyan-400">Replying to</span>
+            <span className="text-xs text-gray-400">{senderName}</span>
             {!compact && message.createdAt && (
               <span className="text-xs text-gray-500">
                 {formatMessageTime(message.createdAt)}
@@ -106,7 +97,7 @@ const ReplyPreview = ({
             {/* Message Type Icon */}
             {preview.icon && (
               <span className={clsx('flex-shrink-0', preview.color)}>
-                {preview.icon}
+                <preview.icon className="w-4 h-4" />
               </span>
             )}
 
@@ -120,11 +111,35 @@ const ReplyPreview = ({
             </p>
           </div>
 
-          {/* Original Message Metadata */}
-          {!compact && message.editedAt && (
-            <p className="text-xs text-gray-500 mt-1">
-              (edited)
-            </p>
+          {/* Additional Info */}
+          {!compact && (
+            <>
+              {message.editedAt && (
+                <p className="text-xs text-gray-500 mt-1">(edited)</p>
+              )}
+              
+              {message.attachments?.length > 0 && (
+                <div className="mt-2 ml-7">
+                  <div className="flex flex-wrap gap-1">
+                    {message.attachments.slice(0, PREVIEW_CONFIG.MAX_ATTACHMENTS_PREVIEW).map((attachment, index) => (
+                      <div key={index} className="flex items-center gap-1 text-xs text-gray-400">
+                        {attachment.type?.startsWith('image/') ? (
+                          <Image className="w-3 h-3" />
+                        ) : (
+                          <File className="w-3 h-3" />
+                        )}
+                        <span className="truncate max-w-[80px]">{attachment.name}</span>
+                      </div>
+                    ))}
+                    {message.attachments.length > PREVIEW_CONFIG.MAX_ATTACHMENTS_PREVIEW && (
+                      <span className="text-xs text-gray-500">
+                        +{message.attachments.length - PREVIEW_CONFIG.MAX_ATTACHMENTS_PREVIEW} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -140,31 +155,6 @@ const ReplyPreview = ({
           </Button>
         )}
       </div>
-
-      {/* Original Message Attachments Preview */}
-      {!compact && message.attachments?.length > 0 && (
-        <div className="mt-2 ml-7">
-          <div className="flex flex-wrap gap-1">
-            {message.attachments.slice(0, 3).map((attachment, index) => (
-              <div key={index} className="flex items-center gap-1 text-xs text-gray-400">
-                {attachment.type?.startsWith('image/') ? (
-                  <Image className="w-3 h-3" />
-                ) : (
-                  <File className="w-3 h-3" />
-                )}
-                <span className="truncate max-w-[80px]">
-                  {attachment.name}
-                </span>
-              </div>
-            ))}
-            {message.attachments.length > 3 && (
-              <span className="text-xs text-gray-500">
-                +{message.attachments.length - 3} more
-              </span>
-            )}
-          </div>
-        </div>
-      )}
     </motion.div>
   )
 }
@@ -173,17 +163,24 @@ const ReplyPreview = ({
 export const InlineReplyPreview = ({
   message,
   onClick,
-  compact = false, // FIXED: Extract compact prop
+  compact = false,
   className = '',
-  ...props // FIXED: Now props won't contain 'compact'
+  ...props
 }) => {
   if (!message) return null
 
-  const preview = message.type === 'image' ? 'Photo' : 
-                 message.type === 'file' ? 'File' : 
-                 message.type === 'voice' ? 'Voice message' :
-                 message.isDeleted ? 'Deleted message' :
-                 message.content
+  const getPreviewText = () => {
+    if (message.isDeleted) return 'Deleted message'
+    
+    switch (message.type) {
+      case 'image': return 'Photo'
+      case 'file': return 'File'
+      case 'voice': return 'Voice message'
+      default: return message.content
+    }
+  }
+
+  const preview = getPreviewText()
 
   return (
     <motion.div
@@ -194,10 +191,10 @@ export const InlineReplyPreview = ({
         'glass rounded-lg mb-2 border-l-2 border-cyan-400/50',
         'cursor-pointer hover:bg-cyan-500/10 transition-all duration-200',
         'bg-gray-800/30',
-        compact ? 'p-1.5' : 'p-2', // FIXED: Use compact directly in className
+        compact ? 'p-1.5' : 'p-2',
         className
       )}
-      {...props} // FIXED: Now safe to spread props
+      {...props}
     >
       <div className="flex items-center gap-2">
         <Reply className="w-3 h-3 text-cyan-400 flex-shrink-0" />
@@ -210,7 +207,7 @@ export const InlineReplyPreview = ({
             'text-xs truncate',
             message.isDeleted ? 'text-gray-500 italic' : 'text-gray-300'
           )}>
-            {truncateText(preview, compact ? 40 : 60)} {/* FIXED: Use compact directly */}
+            {truncateText(preview, compact ? PREVIEW_CONFIG.COMPACT_MAX_LENGTH : PREVIEW_CONFIG.NORMAL_MAX_LENGTH)}
           </p>
         </div>
       </div>
@@ -219,12 +216,7 @@ export const InlineReplyPreview = ({
 }
 
 // Compact reply indicator for message list
-export const ReplyIndicator = ({
-  message,
-  onClick,
-  className = '',
-  ...props
-}) => {
+export const ReplyIndicator = ({ message, onClick, className = '', ...props }) => {
   if (!message) return null
 
   return (
@@ -239,9 +231,7 @@ export const ReplyIndicator = ({
       {...props}
     >
       <Reply className="w-3 h-3" />
-      <span>
-        Reply to {message.sender?.name || 'Unknown'}
-      </span>
+      <span>Reply to {message.sender?.name || 'Unknown'}</span>
     </button>
   )
 }
@@ -249,7 +239,7 @@ export const ReplyIndicator = ({
 // Reply chain component for showing message threads
 export const ReplyChain = ({
   messages = [],
-  maxDepth = 3,
+  maxDepth = PREVIEW_CONFIG.MAX_THREAD_DEPTH,
   onMessageClick,
   className = '',
   ...props
@@ -277,7 +267,7 @@ export const ReplyChain = ({
           <InlineReplyPreview
             message={message}
             onClick={() => onMessageClick?.(message)}
-            compact={true} // FIXED: Pass boolean directly, not through ...props
+            compact={true}
           />
         </motion.div>
       ))}

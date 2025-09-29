@@ -4,17 +4,19 @@ import { useAuth } from './useAuth.jsx'
 import { debounce, throttle } from '@/utils/helpers.js'
 import { DEBUG, UI_CONFIG } from '@/utils/constants.js'
 
-/**
- * Hook for managing typing indicators in conversations
- */
-export const useTyping = (conversationId, options = {}) => {
-  const {
-    typingTimeout = UI_CONFIG.TYPING_TIMEOUT,
-    throttleDelay = 1000,
-    showSelfTyping = false,
-    maxTypingUsers = 3,
-  } = options
+// Configuration constants
+const TYPING_CONFIG = {
+  TIMEOUT: UI_CONFIG.TYPING_TIMEOUT || 3000,
+  THROTTLE_DELAY: 1000,
+  MAX_USERS: 3,
+  MIN_INPUT_LENGTH: 1,
+  DEBOUNCE_DELAY: 300,
+}
 
+// Main typing hook
+export const useTyping = (conversationId, options = {}) => {
+  const config = { ...TYPING_CONFIG, ...options }
+  
   const { 
     getTypingUsers, 
     emitTypingStart, 
@@ -30,7 +32,7 @@ export const useTyping = (conversationId, options = {}) => {
   const isCurrentlyTyping = useRef(false)
   const lastTypingEmit = useRef(0)
 
-  // Get typing users for this conversation
+  // Get typing users for conversation
   useEffect(() => {
     if (!conversationId) {
       setTypingUsers([])
@@ -38,31 +40,24 @@ export const useTyping = (conversationId, options = {}) => {
     }
 
     const users = getTypingUsers(conversationId)
+    const filteredUsers = users
+      .filter(u => u.userId !== currentUser?._id)
+      .slice(0, config.maxTypingUsers || config.MAX_USERS)
     
-    // Filter out current user if not showing self typing
-    const filteredUsers = showSelfTyping 
-      ? users 
-      : users.filter(u => u.userId !== currentUser?._id)
+    setTypingUsers(filteredUsers)
 
-    // Limit number of typing users shown
-    const limitedUsers = filteredUsers.slice(0, maxTypingUsers)
-    
-    setTypingUsers(limitedUsers)
-
-    if (DEBUG.SOCKET_LOGS && limitedUsers.length > 0) {
-      console.log('Typing users in conversation:', conversationId, limitedUsers)
+    if (DEBUG.SOCKET_LOGS && filteredUsers.length > 0) {
+      console.log('Typing users in conversation:', conversationId, filteredUsers)
     }
-  }, [conversationId, getTypingUsers, showSelfTyping, currentUser, maxTypingUsers])
+  }, [conversationId, getTypingUsers, currentUser?._id, config.MAX_USERS])
 
-  // Throttled start typing function
-  const throttledStartTyping = useCallback(
-    throttle(() => {
+  // Optimized typing handlers
+  const typingHandlers = useMemo(() => {
+    const throttledStart = throttle(() => {
       if (!conversationId || !isConnected) return
 
       const now = Date.now()
-      
-      // Only emit if enough time has passed since last emit
-      if (now - lastTypingEmit.current > throttleDelay) {
+      if (now - lastTypingEmit.current > config.THROTTLE_DELAY) {
         emitTypingStart(conversationId)
         lastTypingEmit.current = now
         
@@ -70,13 +65,9 @@ export const useTyping = (conversationId, options = {}) => {
           console.log('Emitted typing start for conversation:', conversationId)
         }
       }
-    }, throttleDelay),
-    [conversationId, isConnected, emitTypingStart, throttleDelay]
-  )
+    }, config.THROTTLE_DELAY)
 
-  // Debounced stop typing function
-  const debouncedStopTyping = useCallback(
-    debounce(() => {
+    const debouncedStop = debounce(() => {
       if (isCurrentlyTyping.current && conversationId && isConnected) {
         emitTypingStop(conversationId)
         isCurrentlyTyping.current = false
@@ -86,60 +77,53 @@ export const useTyping = (conversationId, options = {}) => {
           console.log('Emitted typing stop for conversation:', conversationId)
         }
       }
-    }, typingTimeout),
-    [conversationId, isConnected, emitTypingStop, typingTimeout]
-  )
+    }, config.TIMEOUT)
 
-  // Start typing function
-  const startTyping = useCallback(() => {
-    if (!conversationId || !isConnected) return
+    const startTyping = () => {
+      if (!conversationId || !isConnected) return
 
-    setIsTyping(true)
+      setIsTyping(true)
 
-    // Clear existing timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+
+      // Emit typing start if not already typing
+      if (!isCurrentlyTyping.current) {
+        throttledStart()
+        isCurrentlyTyping.current = true
+      }
+
+      // Auto-stop after timeout
+      typingTimeoutRef.current = setTimeout(() => {
+        stopTyping()
+      }, config.TIMEOUT)
+
+      // Trigger debounced stop
+      debouncedStop()
     }
 
-    // Emit typing start if not already typing
-    if (!isCurrentlyTyping.current) {
-      throttledStartTyping()
-      isCurrentlyTyping.current = true
-    }
+    const stopTyping = () => {
+      if (!conversationId || !isConnected) return
 
-    // Set timeout to automatically stop typing
-    typingTimeoutRef.current = setTimeout(() => {
-      stopTyping()
-    }, typingTimeout)
+      setIsTyping(false)
 
-    // Also trigger debounced stop
-    debouncedStopTyping()
-  }, [conversationId, isConnected, throttledStartTyping, debouncedStopTyping, typingTimeout])
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+        typingTimeoutRef.current = null
+      }
 
-  // Stop typing function
-  const stopTyping = useCallback(() => {
-    if (!conversationId || !isConnected) return
-
-    setIsTyping(false)
-
-    // Clear timeout
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
-      typingTimeoutRef.current = null
-    }
-
-    // Emit stop typing if currently typing
-    if (isCurrentlyTyping.current) {
-      emitTypingStop(conversationId)
-      isCurrentlyTyping.current = false
-      
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Stopped typing for conversation:', conversationId)
+      if (isCurrentlyTyping.current) {
+        emitTypingStop(conversationId)
+        isCurrentlyTyping.current = false
       }
     }
-  }, [conversationId, isConnected, emitTypingStop])
 
-  // Clean up on unmount or conversation change
+    return { startTyping, stopTyping, throttledStart, debouncedStop }
+  }, [conversationId, isConnected, emitTypingStart, emitTypingStop, config.THROTTLE_DELAY, config.TIMEOUT])
+
+  // Cleanup on unmount or conversation change
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) {
@@ -175,29 +159,21 @@ export const useTyping = (conversationId, options = {}) => {
     typingUsers,
     hasTypingUsers: typingUsers.length > 0,
     typingCount: typingUsers.length,
+    formattedTypingUsers,
+    isConnected,
     
     // Actions
-    startTyping,
-    stopTyping,
-    
-    // Formatted display
-    formattedTypingUsers,
-    
-    // Connection state
-    isConnected,
+    startTyping: typingHandlers.startTyping,
+    stopTyping: typingHandlers.stopTyping,
   }
 }
 
-/**
- * Hook for managing typing indicators across multiple conversations
- */
+// Multiple conversation typing hook
 export const useMultipleTyping = (conversationIds = []) => {
   const { getTypingUsers } = useSocket()
   const { user: currentUser } = useAuth()
   
-  const [typingByConversation, setTypingByConversation] = useState(new Map())
-
-  useEffect(() => {
+  const typingByConversation = useMemo(() => {
     const typingMap = new Map()
     
     conversationIds.forEach(conversationId => {
@@ -209,44 +185,42 @@ export const useMultipleTyping = (conversationIds = []) => {
       }
     })
     
-    setTypingByConversation(typingMap)
-  }, [conversationIds, getTypingUsers, currentUser])
+    return typingMap
+  }, [conversationIds, getTypingUsers, currentUser?._id])
 
-  const getTypingForConversation = useCallback((conversationId) => {
-    return typingByConversation.get(conversationId) || []
-  }, [typingByConversation])
-
-  const hasTypingInConversation = useCallback((conversationId) => {
-    return typingByConversation.has(conversationId)
-  }, [typingByConversation])
-
-  const getTotalTypingCount = useCallback(() => {
-    let total = 0
-    typingByConversation.forEach(users => {
-      total += users.length
-    })
-    return total
-  }, [typingByConversation])
+  const utilities = useMemo(() => ({
+    getTypingForConversation: (conversationId) => 
+      typingByConversation.get(conversationId) || [],
+    
+    hasTypingInConversation: (conversationId) => 
+      typingByConversation.has(conversationId),
+    
+    getTotalTypingCount: () => {
+      let total = 0
+      typingByConversation.forEach(users => {
+        total += users.length
+      })
+      return total
+    },
+  }), [typingByConversation])
 
   return {
     typingByConversation: Object.fromEntries(typingByConversation),
-    getTypingForConversation,
-    hasTypingInConversation,
-    totalTypingCount: getTotalTypingCount(),
+    totalTypingCount: utilities.getTotalTypingCount(),
     hasAnyTyping: typingByConversation.size > 0,
+    ...utilities,
   }
 }
 
-/**
- * Hook for input field typing detection
- */
+// Input typing detection hook
 export const useInputTyping = (conversationId, options = {}) => {
-  const {
-    minLength = 1,
-    debounceDelay = 300,
-    enableOnFocus = true,
-    enableOnBlur = true,
-  } = options
+  const config = { 
+    minLength: TYPING_CONFIG.MIN_INPUT_LENGTH,
+    debounceDelay: TYPING_CONFIG.DEBOUNCE_DELAY,
+    enableOnFocus: true,
+    enableOnBlur: true,
+    ...options
+  }
 
   const { startTyping, stopTyping, isTyping } = useTyping(conversationId)
   
@@ -257,9 +231,9 @@ export const useInputTyping = (conversationId, options = {}) => {
   const inputRef = useRef(null)
 
   // Debounced typing detection
-  const debouncedTypingCheck = useCallback(
+  const debouncedTypingCheck = useMemo(() => 
     debounce((value, prevValue) => {
-      const isActuallyTyping = value.length >= minLength && 
+      const isActuallyTyping = value.length >= config.minLength && 
                               value !== prevValue && 
                               isFocused
 
@@ -268,62 +242,53 @@ export const useInputTyping = (conversationId, options = {}) => {
       } else {
         stopTyping()
       }
-    }, debounceDelay),
-    [minLength, debounceDelay, isFocused, startTyping, stopTyping]
+    }, config.debounceDelay),
+    [config.minLength, config.debounceDelay, isFocused, startTyping, stopTyping]
   )
 
-  // Handle input change
-  const handleInputChange = useCallback((value) => {
-    const prevValue = previousValue.current
-    setInputValue(value)
-    previousValue.current = value
+  // Input handlers
+  const inputHandlers = useMemo(() => ({
+    handleInputChange: (value) => {
+      const prevValue = previousValue.current
+      setInputValue(value)
+      previousValue.current = value
+      debouncedTypingCheck(value, prevValue)
+    },
 
-    // Trigger typing detection
-    debouncedTypingCheck(value, prevValue)
-  }, [debouncedTypingCheck])
+    handleFocus: () => {
+      setIsFocused(true)
+      if (config.enableOnFocus && inputValue.length >= config.minLength) {
+        startTyping()
+      }
+    },
 
-  // Handle input focus
-  const handleFocus = useCallback(() => {
-    setIsFocused(true)
-    
-    if (enableOnFocus && inputValue.length >= minLength) {
-      startTyping()
-    }
-  }, [enableOnFocus, inputValue.length, minLength, startTyping])
+    handleBlur: () => {
+      setIsFocused(false)
+      if (config.enableOnBlur) {
+        stopTyping()
+      }
+    },
 
-  // Handle input blur
-  const handleBlur = useCallback(() => {
-    setIsFocused(false)
-    
-    if (enableOnBlur) {
-      stopTyping()
-    }
-  }, [enableOnBlur, stopTyping])
+    handleKeyDown: (event) => {
+      // Stop typing on Enter (message sent)
+      if (event.key === 'Enter' && !event.shiftKey) {
+        stopTyping()
+      }
+    },
+  }), [config, inputValue.length, startTyping, stopTyping, debouncedTypingCheck])
 
-  // Handle key events
-  const handleKeyDown = useCallback((event) => {
-    // Stop typing on Enter (message sent)
-    if (event.key === 'Enter' && !event.shiftKey) {
-      stopTyping()
-    }
-  }, [stopTyping])
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      stopTyping()
-    }
-  }, [stopTyping])
+  // Cleanup
+  useEffect(() => () => stopTyping(), [stopTyping])
 
   return {
-    // Input props
+    // Input props (can be spread directly)
     inputProps: {
       ref: inputRef,
       value: inputValue,
-      onChange: (e) => handleInputChange(e.target.value),
-      onFocus: handleFocus,
-      onBlur: handleBlur,
-      onKeyDown: handleKeyDown,
+      onChange: (e) => inputHandlers.handleInputChange(e.target.value),
+      onFocus: inputHandlers.handleFocus,
+      onBlur: inputHandlers.handleBlur,
+      onKeyDown: inputHandlers.handleKeyDown,
     },
     
     // State
@@ -332,21 +297,18 @@ export const useInputTyping = (conversationId, options = {}) => {
     isTyping,
     
     // Actions
-    setInputValue: handleInputChange,
-    clearInput: () => handleInputChange(''),
+    setInputValue: inputHandlers.handleInputChange,
+    clearInput: () => inputHandlers.handleInputChange(''),
     focus: () => inputRef.current?.focus(),
     blur: () => inputRef.current?.blur(),
   }
 }
 
-/**
- * Hook for managing typing state in forms
- */
+// Form typing detection hook
 export const useFormTyping = (conversationId, formRef) => {
   const { startTyping, stopTyping } = useTyping(conversationId)
   const [isFormTyping, setIsFormTyping] = useState(false)
 
-  // Monitor form inputs for typing activity
   useEffect(() => {
     if (!formRef?.current) return
 
@@ -360,8 +322,8 @@ export const useFormTyping = (conversationId, formRef) => {
       }
     }
 
-    const handleBlur = (event) => {
-      // Check if focus is moving to another input in the same form
+    const handleBlur = () => {
+      // Check if focus moved to another input in the same form
       setTimeout(() => {
         const activeElement = document.activeElement
         const isStillInForm = form.contains(activeElement)

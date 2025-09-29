@@ -1,14 +1,12 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
-import { useChatStore, useChatActions, useChatComputed } from '@/store/chatSlice.js'
+import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import useChatStore from '@/store/chatSlice.js'
 import { useSocket } from '@/hooks/useSocket.jsx'
 import { useAuth } from '@/hooks/useAuth.jsx'
 import { SOCKET_EVENTS, DEBUG } from '@/utils/constants.js'
 import { useToast } from '@/components/ui/Toast.jsx'
 
-// Create context
 const ChatContext = createContext(null)
 
-// Custom hook to use chat context
 export const useChatContext = () => {
   const context = useContext(ChatContext)
   if (!context) {
@@ -17,257 +15,137 @@ export const useChatContext = () => {
   return context
 }
 
-// Chat provider component
 export const ChatProvider = ({ children }) => {
   const chatStore = useChatStore()
-  const chatActions = useChatActions()
-  const chatComputed = useChatComputed()
-  
-  const { 
-    isConnected, 
-    addEventListener, 
-    removeEventListener,
-    joinConversation,
-    leaveConversation 
-  } = useSocket()
-  
-  const { user } = useAuth()
+  const { isConnected, addEventListener, removeEventListener, joinConversation, leaveConversation } = useSocket()
+  const { user, isAuthenticated } = useAuth()
   const toast = useToast()
-  
-  // Local state
+
   const [isInitialized, setIsInitialized] = useState(false)
   const [currentConversationId, setCurrentConversationId] = useState(null)
-  
-  // Refs for cleanup
+
   const socketListenersRef = useRef(new Set())
   const currentConversationRef = useRef(null)
+  const initializationAttempted = useRef(false)
 
-  // Initialize chat data
+  // FIXED: Initialize chat data with proper store methods
   useEffect(() => {
     const initialize = async () => {
-      if (!user || isInitialized) return
+      // Prevent multiple initialization attempts
+      if (!user || !isAuthenticated || isInitialized || initializationAttempted.current) {
+        return
+      }
+
+      initializationAttempted.current = true
 
       try {
-        // Add current user to cache
-        chatActions.addUserToCache({ ...user, userId: user._id })
-        
+        if (DEBUG.ENABLED) console.log('💬 Initializing chat context...')
+
+        // FIXED: Use the store's addUserToCache method instead of setState
+        const existingUser = chatStore.userCache?.[user._id]
+        if (!existingUser) {
+          chatStore.addUserToCache({ ...user, userId: user._id })
+        }
+
         // Load conversations
-        await chatActions.loadConversations()
+        await chatStore.loadConversations()
         
         setIsInitialized(true)
 
-        if (DEBUG.ENABLED) {
-          console.log('Chat context initialized')
-        }
+        if (DEBUG.ENABLED) console.log('💬 Chat context initialized')
       } catch (error) {
-        console.error('Failed to initialize chat:', error)
+        console.error('Chat initialization failed:', error)
         toast.error('Failed to load conversations')
+        initializationAttempted.current = false // Allow retry on error
       }
     }
 
     initialize()
-  }, [user, isInitialized, chatActions, toast])
+  }, [user?._id, isAuthenticated, isInitialized])
 
-  // Handle socket events for real-time updates
+  // Reset initialization when user changes
+  useEffect(() => {
+    if (!user || !isAuthenticated) {
+      setIsInitialized(false)
+      initializationAttempted.current = false
+      setCurrentConversationId(null)
+    }
+  }, [user?._id, isAuthenticated])
+
+  // Socket event handlers
   useEffect(() => {
     if (!isConnected || !isInitialized) return
 
-    // New message handler
-    const handleNewMessage = ({ message, conversationId }) => {
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Received new message:', message)
-      }
-
-      // Add message to store
-      chatActions.addSocketMessage(message)
-      
-      // Show notification if not in active conversation
-      if (conversationId !== chatStore.activeConversationId) {
-        const conversation = chatComputed.getConversationById(conversationId)
-        const conversationName = conversation?.name || 'Unknown'
+    const handlers = {
+      [SOCKET_EVENTS.NEW_MESSAGE]: ({ message, conversationId }) => {
+        if (DEBUG.SOCKET_LOGS) console.log('📨 Received new message:', message)
         
-        toast.info(`New message in ${conversationName}`, {
-          duration: 3000,
-          onClick: () => {
-            chatActions.setActiveConversation(conversationId)
-          }
-        })
-      }
-    }
-
-    // Message edited handler
-    const handleMessageEdited = ({ messageId, newContent, editedAt }) => {
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Message edited:', messageId)
-      }
-
-      // Update message in store - FIXED: Use object syntax instead of Map methods
-      Object.keys(chatStore.messagesByConversation).forEach(conversationId => {
-        const messages = chatStore.messagesByConversation[conversationId]
-        const messageIndex = messages.findIndex(m => m._id === messageId)
-        if (messageIndex !== -1) {
-          const updatedMessages = [...messages]
-          updatedMessages[messageIndex] = {
-            ...updatedMessages[messageIndex],
-            content: newContent,
-            editedAt
-          }
-          // Use the store action to update instead of direct mutation
-          chatActions.updateConversation(conversationId, {
-            messages: updatedMessages
-          })
-        }
-      })
-    }
-
-    // Message deleted handler
-    const handleMessageDeleted = ({ messageId, deletedAt }) => {
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Message deleted:', messageId)
-      }
-
-      // Update message in store - FIXED: Use object syntax instead of Map methods
-      Object.keys(chatStore.messagesByConversation).forEach(conversationId => {
-        const messages = chatStore.messagesByConversation[conversationId]
-        const messageIndex = messages.findIndex(m => m._id === messageId)
-        if (messageIndex !== -1) {
-          const updatedMessages = [...messages]
-          updatedMessages[messageIndex] = {
-            ...updatedMessages[messageIndex],
-            isDeleted: true,
-            deletedAt,
-            content: 'This message was deleted'
-          }
-          // Use the store action to update instead of direct mutation
-          chatActions.updateConversation(conversationId, {
-            messages: updatedMessages
-          })
-        }
-      })
-    }
-
-    // Reaction updated handler
-    const handleReactionUpdated = ({ messageId, reactions }) => {
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Reaction updated:', messageId)
-      }
-
-      // Update reactions in store - FIXED: Use object syntax instead of Map methods
-      Object.keys(chatStore.messagesByConversation).forEach(conversationId => {
-        const messages = chatStore.messagesByConversation[conversationId]
-        const messageIndex = messages.findIndex(m => m._id === messageId)
-        if (messageIndex !== -1) {
-          const updatedMessages = [...messages]
-          updatedMessages[messageIndex] = {
-            ...updatedMessages[messageIndex],
-            reactions
-          }
-          // Use the store action to update instead of direct mutation
-          chatActions.updateConversation(conversationId, {
-            messages: updatedMessages
-          })
-        }
-      })
-    }
-
-    // Message read handler
-    const handleMessageRead = ({ conversationId, userId }) => {
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Messages read in conversation:', conversationId)
-      }
-
-      // Update read status in store - FIXED: Use object syntax instead of Map methods
-      const messages = chatStore.messagesByConversation[conversationId]
-      if (messages) {
-        const updatedMessages = messages.map(message => {
-          if (!message.readBy) message.readBy = []
+        chatStore.addSocketMessage(message)
+        
+        // Show notification if not in active conversation
+        if (conversationId !== chatStore.activeConversationId) {
+          const conversation = chatStore.getConversationById(conversationId)
+          const conversationName = conversation?.name || 'Unknown'
           
-          const existingRead = message.readBy.find(r => r.user === userId)
-          if (!existingRead) {
-            message.readBy.push({
-              user: userId,
-              readAt: new Date().toISOString()
-            })
-          }
-          
-          return message
-        })
-        
-        // Use the store action to update instead of direct mutation
-        chatActions.updateConversation(conversationId, {
-          messages: updatedMessages
-        })
-      }
-    }
-
-    // User joined group handler
-    const handleUserJoinedGroup = ({ userId, user: userData, groupId }) => {
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('User joined group:', userId, groupId)
-      }
-
-      // Update conversation participants
-      const conversation = chatComputed.getConversationById(groupId)
-      if (conversation && conversation.type === 'group') {
-        const updatedParticipants = [...(conversation.participants || [])]
-        const exists = updatedParticipants.find(p => p.user._id === userId)
-        
-        if (!exists) {
-          updatedParticipants.push({
-            user: userData,
-            joinedAt: new Date().toISOString(),
-            role: 'member'
-          })
-          
-          chatActions.updateConversation(groupId, {
-            participants: updatedParticipants
+          toast.info(`New message in ${conversationName}`, {
+            duration: 3000,
+            onClick: () => chatStore.setActiveConversation(conversationId)
           })
         }
-      }
-    }
+      },
 
-    // User left group handler
-    const handleUserLeftGroup = ({ userId, groupId }) => {
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('User left group:', userId, groupId)
-      }
+      [SOCKET_EVENTS.MESSAGE_EDITED]: ({ messageId, newContent, editedAt }) => {
+        if (DEBUG.SOCKET_LOGS) console.log('✏️ Message edited:', messageId)
+        // FIXED: Use a store method instead of setState
+        chatStore.updateMessageInConversations?.(messageId, { content: newContent, editedAt })
+      },
 
-      // Update conversation participants
-      const conversation = chatComputed.getConversationById(groupId)
-      if (conversation && conversation.type === 'group') {
-        const updatedParticipants = (conversation.participants || [])
-          .filter(p => p.user._id !== userId)
-        
-        chatActions.updateConversation(groupId, {
-          participants: updatedParticipants
+      [SOCKET_EVENTS.MESSAGE_DELETED]: ({ messageId, deletedAt }) => {
+        if (DEBUG.SOCKET_LOGS) console.log('🗑️ Message deleted:', messageId)
+        // FIXED: Use a store method instead of setState  
+        chatStore.updateMessageInConversations?.(messageId, { 
+          isDeleted: true, 
+          deletedAt, 
+          content: 'This message was deleted' 
         })
-      }
+      },
+
+      [SOCKET_EVENTS.REACTION_UPDATED]: ({ messageId, reactions }) => {
+        if (DEBUG.SOCKET_LOGS) console.log('⚡ Reaction updated:', messageId)
+        chatStore.updateMessageInConversations?.(messageId, { reactions })
+      },
+
+      [SOCKET_EVENTS.MESSAGE_READ]: ({ conversationId, userId }) => {
+        if (DEBUG.SOCKET_LOGS) console.log('👁️ Messages read:', conversationId)
+        chatStore.markMessagesAsReadByUser?.(conversationId, userId)
+      },
+
+      [SOCKET_EVENTS.USER_JOINED_GROUP]: ({ userId, user: userData, groupId }) => {
+        chatStore.updateGroupParticipants?.(groupId, 'add', { 
+          user: userData, 
+          joinedAt: new Date().toISOString(), 
+          role: 'member' 
+        })
+      },
+
+      [SOCKET_EVENTS.USER_LEFT_GROUP]: ({ userId, groupId }) => {
+        chatStore.updateGroupParticipants?.(groupId, 'remove', userId)
+      },
     }
 
-    // Register event listeners
-    const listeners = [
-      { event: SOCKET_EVENTS.NEW_MESSAGE, handler: handleNewMessage },
-      { event: SOCKET_EVENTS.MESSAGE_EDITED, handler: handleMessageEdited },
-      { event: SOCKET_EVENTS.MESSAGE_DELETED, handler: handleMessageDeleted },
-      { event: SOCKET_EVENTS.REACTION_UPDATED, handler: handleReactionUpdated },
-      { event: SOCKET_EVENTS.MESSAGE_READ, handler: handleMessageRead },
-      { event: SOCKET_EVENTS.USER_JOINED_GROUP, handler: handleUserJoinedGroup },
-      { event: SOCKET_EVENTS.USER_LEFT_GROUP, handler: handleUserLeftGroup },
-    ]
-
-    listeners.forEach(({ event, handler }) => {
+    // Register all event listeners
+    Object.entries(handlers).forEach(([event, handler]) => {
       addEventListener(event, handler)
       socketListenersRef.current.add({ event, handler })
     })
 
     return () => {
-      // Cleanup event listeners
       socketListenersRef.current.forEach(({ event, handler }) => {
         removeEventListener(event, handler)
       })
       socketListenersRef.current.clear()
     }
-  }, [isConnected, isInitialized, chatActions, chatComputed, chatStore, addEventListener, removeEventListener, toast])
+  }, [isConnected, isInitialized, chatStore, addEventListener, removeEventListener, toast])
 
   // Handle active conversation changes
   useEffect(() => {
@@ -283,128 +161,112 @@ export const ChatProvider = ({ children }) => {
       if (activeConversationId && isConnected) {
         joinConversation(activeConversationId)
         
-        // Load messages if not already loaded - FIXED: Use object syntax instead of Map methods
-        const messages = chatStore.messagesByConversation[activeConversationId]
+        // Load messages if not already loaded
+        const messages = chatStore.messagesByConversation?.[activeConversationId]
         if (!messages || messages.length === 0) {
-          chatActions.loadMessages(activeConversationId)
+          chatStore.loadMessages(activeConversationId)
         }
         
-        // Mark conversation as read
+        // Mark as read after a short delay
         setTimeout(() => {
-          chatActions.markAsRead(activeConversationId)
+          chatStore.markAsRead(activeConversationId)
         }, 1000)
       }
       
       setCurrentConversationId(activeConversationId)
       currentConversationRef.current = activeConversationId
     }
-  }, [chatStore.activeConversationId, currentConversationId, isConnected, joinConversation, leaveConversation, chatActions, chatStore.messagesByConversation])
-
-  // Periodic conversation refresh
-  useEffect(() => {
-    if (!isInitialized) return
-
-    const interval = setInterval(() => {
-      // Refresh conversations every 5 minutes
-      chatActions.loadConversations(false)
-    }, 5 * 60 * 1000)
-
-    return () => clearInterval(interval)
-  }, [isInitialized, chatActions])
+  }, [chatStore.activeConversationId, currentConversationId, isConnected, joinConversation, leaveConversation])
 
   // Enhanced chat operations
-  const enhancedActions = {
-    ...chatActions,
-    
-    /**
-     * Send message with enhanced features
-     */
-    sendMessage: useCallback(async (messageData) => {
-      const result = await chatActions.sendMessage(messageData)
+  const enhancedActions = useMemo(() => ({
+    sendMessage: async (messageData) => {
+      const result = await chatStore.sendMessage(messageData)
       
-      if (result.success) {
-        // Clear reply state after sending
-        chatActions.setReplyToMessage(null)
-        
-        // Auto-scroll to bottom (handled by UI components)
-        // Mark conversation as read
+      if (result?.success) {
+        // Clear reply state and mark as read
+        chatStore.setReplyToMessage?.(null)
         setTimeout(() => {
-          chatActions.markAsRead(messageData.conversationId)
+          chatStore.markAsRead(messageData.conversationId)
         }, 500)
       }
       
       return result
-    }, [chatActions]),
-    
-    /**
-     * Create conversation and set as active
-     */
-    createAndSetActive: useCallback(async (type, data) => {
-      let result
-      
-      if (type === 'direct') {
-        result = await chatActions.createDirectConversation(data.participantId)
-      } else if (type === 'group') {
-        result = await chatActions.createGroup(data)
-      }
+    },
+
+    createAndSetActive: async (type, data) => {
+      const result = type === 'direct' 
+        ? await chatStore.createDirectConversation(data.participantId)
+        : await chatStore.createGroup(data)
       
       if (result?.success) {
-        chatActions.setActiveConversation(result.data._id)
+        chatStore.setActiveConversation(result.data._id)
       }
       
       return result
-    }, [chatActions]),
-    
-    /**
-     * Load more messages (pagination)
-     */
-    loadMoreMessages: useCallback(async (conversationId) => {
-      // FIXED: Use object syntax instead of Map methods
-      const pagination = chatStore.messagesPagination[conversationId]
-      const nextPage = pagination ? pagination.page + 1 : 2
-      
-      return await chatActions.loadMessages(conversationId, nextPage)
-    }, [chatActions, chatStore.messagesPagination]),
-  }
+    },
 
-  // Context value
-  const contextValue = {
-    // State
-    ...chatStore,
+    loadMoreMessages: async (conversationId) => {
+      const pagination = chatStore.messagesPagination?.[conversationId]
+      const nextPage = pagination ? pagination.page + 1 : 2
+      return await chatStore.loadMessages(conversationId, nextPage)
+    },
+  }), [chatStore])
+
+  // Memoized context value with safe property access
+  const contextValue = useMemo(() => ({
+    // Store state (with fallbacks)
+    conversations: chatStore.conversations || [],
+    activeConversationId: chatStore.activeConversationId || null,
+    messagesByConversation: chatStore.messagesByConversation || {},
+    messagesLoading: chatStore.messagesLoading || false,
+    messagesPagination: chatStore.messagesPagination || {},
+    
+    // Local state
     isInitialized,
     currentConversationId,
-    
-    // Actions
-    ...enhancedActions,
-    
-    // Computed
-    ...chatComputed,
-    
-    // Connection status
     isConnected,
     
+    // Enhanced actions
+    ...enhancedActions,
+    
+    // Store actions (with null checks)
+    loadConversations: chatStore.loadConversations || (() => Promise.resolve()),
+    loadMessages: chatStore.loadMessages || (() => Promise.resolve()),
+    sendMessage: chatStore.sendMessage || (() => Promise.resolve({ success: false })),
+    setActiveConversation: chatStore.setActiveConversation || (() => {}),
+    getConversationById: chatStore.getConversationById || (() => null),
+    getMessagesForConversation: chatStore.getMessagesForConversation || (() => []),
+    markAsRead: chatStore.markAsRead || (() => {}),
+    
     // Utilities
-    formatConversationName: useCallback((conversation, currentUserId) => {
-      if (conversation.type === 'group') {
+    formatConversationName: (conversation, currentUserId) => {
+      if (conversation?.type === 'group') {
         return conversation.name || 'Unnamed Group'
       }
       
-      const otherParticipant = conversation.participants?.find(
-        p => p.user._id !== currentUserId
+      const otherParticipant = conversation?.participants?.find(
+        p => p.user?._id !== currentUserId
       )
       
       return otherParticipant?.user?.name || 'Unknown User'
-    }, []),
-    
-    getUnreadMessagesCount: useCallback((conversationId) => {
-      const conversation = chatComputed.getConversationById(conversationId)
+    },
+
+    getUnreadMessagesCount: (conversationId) => {
+      const conversation = chatStore.getConversationById?.(conversationId)
       return conversation?.unreadCount || 0
-    }, [chatComputed]),
-    
-    isConversationActive: useCallback((conversationId) => {
+    },
+
+    isConversationActive: (conversationId) => {
       return chatStore.activeConversationId === conversationId
-    }, [chatStore.activeConversationId]),
-  }
+    },
+  }), [
+    chatStore,
+    isInitialized,
+    currentConversationId,
+    isConnected,
+    enhancedActions
+  ])
 
   return (
     <ChatContext.Provider value={contextValue}>
@@ -413,8 +275,4 @@ export const ChatProvider = ({ children }) => {
   )
 }
 
-// Export context for direct access if needed
-export { ChatContext }
-
-// Default export
 export default ChatProvider

@@ -1,18 +1,8 @@
 import { useMemo, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Search, 
-  Plus, 
-  MoreVertical, 
-  Archive, 
-  Pin, 
-  Trash2, 
-  Volume2, 
-  VolumeX,
-  Star,
-  MessageSquare,
-  Users,
-  Filter
+  Search, Plus, MoreVertical, Archive, Pin, Trash2, Volume2, VolumeX,
+  Star, MessageSquare, Users, Filter
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import Button from '../ui/Button.jsx'
@@ -23,6 +13,29 @@ import { useAuth } from '@/hooks/useAuth.jsx'
 import { useOnlineUsers } from '@/hooks/useOnlineUsers.jsx'
 import { formatConversationTime } from '@/utils/formatters.js'
 import { truncateText } from '@/utils/helpers.js'
+
+// Configuration constants
+const LIST_CONFIG = {
+  DEFAULT_LIMIT: 100,
+  SKELETON_COUNT: 8,
+  TRUNCATE_LENGTH: 40,
+  MAX_UNREAD_DISPLAY: 99
+}
+
+const FILTER_OPTIONS = [
+  { value: 'all', label: 'All', key: 'total' },
+  { value: 'unread', label: 'Unread', key: 'unread' },
+  { value: 'direct', label: 'Direct', key: 'direct' },
+  { value: 'groups', label: 'Groups', key: 'groups' },
+  { value: 'archived', label: 'Archived', key: 'archived' },
+  { value: 'online', label: 'Online', key: 'online' },
+]
+
+const SORT_OPTIONS = {
+  lastMessage: 'lastMessage',
+  name: 'name',
+  unread: 'unread'
+}
 
 const ConversationList = ({
   onConversationSelect,
@@ -37,7 +50,7 @@ const ConversationList = ({
   
   const [searchQuery, setSearchQuery] = useState('')
   const [filterBy, setFilterBy] = useState('all')
-  const [sortBy, setSortBy] = useState('lastMessage')
+  const [sortBy, setSortBy] = useState(SORT_OPTIONS.lastMessage)
 
   const {
     conversations,
@@ -49,7 +62,7 @@ const ConversationList = ({
     sortBy,
     filterBy,
     searchQuery,
-    limit: 100
+    limit: LIST_CONFIG.DEFAULT_LIMIT
   })
 
   const {
@@ -64,52 +77,18 @@ const ConversationList = ({
 
   const searchInputRef = useRef(null)
 
-  // Filter options
-  const filterOptions = [
-    { value: 'all', label: 'All', count: stats.total },
-    { value: 'unread', label: 'Unread', count: stats.unread },
-    { value: 'direct', label: 'Direct', count: stats.direct },
-    { value: 'groups', label: 'Groups', count: stats.groups },
-    { value: 'archived', label: 'Archived', count: stats.archived },
-    { value: 'online', label: 'Online', count: stats.online },
-  ]
+  // Memoized filter options with counts
+  const filterOptionsWithCounts = useMemo(() => 
+    FILTER_OPTIONS.map(option => ({
+      ...option,
+      count: stats[option.key] || 0
+    })),
+    [stats]
+  )
 
-  const activeFilter = filterOptions.find(f => f.value === filterBy)
+  const activeFilter = filterOptionsWithCounts.find(f => f.value === filterBy)
 
-  // Handle conversation actions
-  const handleConversationClick = useCallback((conversation) => {
-    if (selectionMode) {
-      toggleSelection(conversation._id)
-    } else {
-      onConversationSelect?.(conversation._id)
-    }
-  }, [selectionMode, toggleSelection, onConversationSelect])
-
-  const handleArchive = useCallback((conversationId) => {
-    // Implementation would call archive API
-    console.log('Archive conversation:', conversationId)
-    hideContextMenu()
-  }, [hideContextMenu])
-
-  const handlePin = useCallback((conversationId) => {
-    // Implementation would call pin API
-    console.log('Pin conversation:', conversationId)
-    hideContextMenu()
-  }, [hideContextMenu])
-
-  const handleMute = useCallback((conversationId) => {
-    // Implementation would call mute API
-    console.log('Mute conversation:', conversationId)
-    hideContextMenu()
-  }, [hideContextMenu])
-
-  const handleDelete = useCallback((conversationId) => {
-    // Implementation would call delete API with confirmation
-    console.log('Delete conversation:', conversationId)
-    hideContextMenu()
-  }, [hideContextMenu])
-
-  // Get conversation display info
+  // Memoized conversation info calculator
   const getConversationInfo = useCallback((conversation) => {
     if (conversation.type === 'group') {
       return {
@@ -120,14 +99,8 @@ const ConversationList = ({
       }
     }
     
-    // Direct conversation
-    const otherParticipant = conversation.participants?.find(
-      p => p.user._id !== user?._id
-    )
-    
-    const isOnline = otherParticipant 
-      ? getUserOnlineStatus(otherParticipant.user._id) === 'online'
-      : false
+    const otherParticipant = conversation.participants?.find(p => p.user._id !== user?._id)
+    const isOnline = otherParticipant ? getUserOnlineStatus(otherParticipant.user._id) === 'online' : false
     
     return {
       name: otherParticipant?.user?.name || 'Unknown User',
@@ -135,14 +108,45 @@ const ConversationList = ({
       subtitle: isOnline ? 'Online' : 'Offline',
       isOnline
     }
-  }, [user, getUserOnlineStatus])
+  }, [user?._id, getUserOnlineStatus])
 
-  // Context menu items
+  // Action handlers with memoization
+  const handlers = useMemo(() => ({
+    handleConversationClick: (conversation) => {
+      if (selectionMode) {
+        toggleSelection(conversation._id)
+      } else {
+        onConversationSelect?.(conversation._id)
+      }
+    },
+
+    handleArchive: (conversationId) => {
+      console.log('Archive conversation:', conversationId)
+      hideContextMenu()
+    },
+
+    handlePin: (conversationId) => {
+      console.log('Pin conversation:', conversationId)
+      hideContextMenu()
+    },
+
+    handleMute: (conversationId) => {
+      console.log('Mute conversation:', conversationId)
+      hideContextMenu()
+    },
+
+    handleDelete: (conversationId) => {
+      console.log('Delete conversation:', conversationId)
+      hideContextMenu()
+    }
+  }), [selectionMode, toggleSelection, onConversationSelect, hideContextMenu])
+
+  // Context menu items generator
   const getContextMenuItems = useCallback((conversation) => [
     {
-      label: conversation.isPinned ? 'Unpin' : 'Pin',
+      label: conversation?.isPinned ? 'Unpin' : 'Pin',
       icon: <Pin className="w-4 h-4" />,
-      onClick: () => handlePin(conversation._id)
+      onClick: () => handlers.handlePin(conversation._id)
     },
     {
       label: 'Star',
@@ -150,23 +154,23 @@ const ConversationList = ({
       onClick: () => {/* Handle star */}
     },
     {
-      label: conversation.isMuted ? 'Unmute' : 'Mute',
-      icon: conversation.isMuted ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />,
-      onClick: () => handleMute(conversation._id)
+      label: conversation?.isMuted ? 'Unmute' : 'Mute',
+      icon: conversation?.isMuted ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />,
+      onClick: () => handlers.handleMute(conversation._id)
     },
     { type: 'separator' },
     {
       label: 'Archive',
       icon: <Archive className="w-4 h-4" />,
-      onClick: () => handleArchive(conversation._id)
+      onClick: () => handlers.handleArchive(conversation._id)
     },
     {
       label: 'Delete',
       icon: <Trash2 className="w-4 h-4" />,
-      onClick: () => handleDelete(conversation._id),
+      onClick: () => handlers.handleDelete(conversation._id),
       variant: 'danger'
     }
-  ], [handlePin, handleMute, handleArchive, handleDelete])
+  ], [handlers])
 
   return (
     <div className={clsx('flex flex-col h-full', className)} {...props}>
@@ -193,16 +197,10 @@ const ConversationList = ({
                 </Button>
               }
             >
-              <DropdownItem
-                onClick={onNewChat}
-                leftIcon={<MessageSquare className="w-4 h-4" />}
-              >
+              <DropdownItem onClick={onNewChat} leftIcon={<MessageSquare className="w-4 h-4" />}>
                 New Chat
               </DropdownItem>
-              <DropdownItem
-                onClick={onNewGroup}
-                leftIcon={<Users className="w-4 h-4" />}
-              >
+              <DropdownItem onClick={onNewGroup} leftIcon={<Users className="w-4 h-4" />}>
                 New Group
               </DropdownItem>
             </Dropdown>
@@ -221,48 +219,42 @@ const ConversationList = ({
         />
 
         {/* Filters */}
-        <div className="flex items-center gap-2">
-          <Dropdown
-            trigger={
-              <Button
-                variant="ghost"
-                size="sm"
-                rightIcon={<Filter className="w-3 h-3" />}
-                className="text-xs"
-              >
-                {activeFilter?.label} ({activeFilter?.count})
-              </Button>
-            }
-          >
-            {filterOptions.map((option) => (
-              <DropdownItem
-                key={option.value}
-                onClick={() => setFilterBy(option.value)}
-                selected={filterBy === option.value}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <span>{option.label}</span>
-                  <span className="text-xs text-gray-400">
-                    {option.count}
-                  </span>
-                </div>
-              </DropdownItem>
-            ))}
-          </Dropdown>
-        </div>
+        <Dropdown
+          trigger={
+            <Button
+              variant="ghost"
+              size="sm"
+              rightIcon={<Filter className="w-3 h-3" />}
+              className="text-xs"
+            >
+              {activeFilter?.label} ({activeFilter?.count})
+            </Button>
+          }
+        >
+          {filterOptionsWithCounts.map((option) => (
+            <DropdownItem
+              key={option.value}
+              onClick={() => setFilterBy(option.value)}
+              selected={filterBy === option.value}
+            >
+              <div className="flex items-center justify-between w-full">
+                <span>{option.label}</span>
+                <span className="text-xs text-gray-400">{option.count}</span>
+              </div>
+            </DropdownItem>
+          ))}
+        </Dropdown>
       </div>
 
       {/* Conversations */}
       <div className="flex-1 overflow-y-auto">
         {loading && conversations.length === 0 ? (
-          // Loading skeleton
           <div className="space-y-2 p-2">
-            {Array.from({ length: 8 }, (_, i) => (
+            {Array.from({ length: LIST_CONFIG.SKELETON_COUNT }, (_, i) => (
               <ConversationSkeleton key={i} />
             ))}
           </div>
         ) : conversations.length === 0 ? (
-          // Empty state
           <EmptyConversationList
             searchQuery={searchQuery}
             filterBy={filterBy}
@@ -284,7 +276,7 @@ const ConversationList = ({
                     isActive={isActive}
                     isSelected={isSelected}
                     selectionMode={selectionMode}
-                    onClick={() => handleConversationClick(conversation)}
+                    onClick={() => handlers.handleConversationClick(conversation)}
                     onContextMenu={(e) => showContextMenu(conversation._id, e)}
                     index={index}
                   />
@@ -303,10 +295,7 @@ const ConversationList = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className="fixed z-50"
-            style={{
-              top: contextMenu.position.y,
-              left: contextMenu.position.x
-            }}
+            style={{ top: contextMenu.position.y, left: contextMenu.position.x }}
           >
             <div className="glass rounded-lg shadow-2xl border border-gray-600/50 py-2 min-w-[160px]">
               {getContextMenuItems(
@@ -333,7 +322,7 @@ const ConversationList = ({
   )
 }
 
-// Individual conversation item
+// Optimized conversation item component
 const ConversationItem = ({
   conversation,
   info,
@@ -366,24 +355,18 @@ const ConversationItem = ({
       <div className="flex items-center gap-3">
         {/* Selection checkbox */}
         {selectionMode && (
-          <div className="flex-shrink-0">
-            <input
-              type="checkbox"
-              checked={isSelected}
-              readOnly
-              className="w-4 h-4 rounded border-gray-600 text-cyan-400"
-            />
-          </div>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            readOnly
+            className="w-4 h-4 rounded border-gray-600 text-cyan-400"
+          />
         )}
 
-        {/* Avatar */}
+        {/* Avatar with indicators */}
         <div className="flex-shrink-0 relative">
           {info.avatar ? (
-            <img
-              src={info.avatar}
-              alt={info.name}
-              className="w-12 h-12 rounded-full"
-            />
+            <img src={info.avatar} alt={info.name} className="w-12 h-12 rounded-full" />
           ) : (
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center">
               <span className="text-white font-semibold text-sm">
@@ -392,16 +375,15 @@ const ConversationItem = ({
             </div>
           )}
 
-          {/* Online indicator */}
+          {/* Status indicators */}
           {info.isOnline && conversation.type === 'direct' && (
             <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-dark-surface" />
           )}
 
-          {/* Unread badge */}
           {hasUnread && (
             <div className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 rounded-full flex items-center justify-center">
               <span className="text-white text-xs font-bold px-1">
-                {unreadCount > 99 ? '99+' : unreadCount}
+                {unreadCount > LIST_CONFIG.MAX_UNREAD_DISPLAY ? '99+' : unreadCount}
               </span>
             </div>
           )}
@@ -418,17 +400,10 @@ const ConversationItem = ({
                 {info.name}
               </h3>
               
-              {/* Status indicators */}
               <div className="flex items-center gap-1">
-                {conversation.isPinned && (
-                  <Pin className="w-3 h-3 text-yellow-400" />
-                )}
-                {conversation.isMuted && (
-                  <VolumeX className="w-3 h-3 text-gray-400" />
-                )}
-                {conversation.isStarred && (
-                  <Star className="w-3 h-3 text-yellow-400" />
-                )}
+                {conversation.isPinned && <Pin className="w-3 h-3 text-yellow-400" />}
+                {conversation.isMuted && <VolumeX className="w-3 h-3 text-gray-400" />}
+                {conversation.isStarred && <Star className="w-3 h-3 text-yellow-400" />}
               </div>
             </div>
 
@@ -450,7 +425,7 @@ const ConversationItem = ({
                   {lastMessage.sender?.name !== info.name && conversation.type === 'group' && (
                     <span className="text-gray-400">{lastMessage.sender?.name}: </span>
                   )}
-                  {truncateText(lastMessage.content, 40)}
+                  {truncateText(lastMessage.content, LIST_CONFIG.TRUNCATE_LENGTH)}
                 </>
               ) : (
                 <span className="italic">No messages yet</span>
@@ -469,7 +444,7 @@ const ConversationItem = ({
   )
 }
 
-// Loading skeleton
+// Simplified components
 const ConversationSkeleton = () => (
   <div className="flex items-center gap-3 p-3">
     <div className="w-12 h-12 rounded-full bg-gray-700 animate-pulse" />
@@ -483,7 +458,6 @@ const ConversationSkeleton = () => (
   </div>
 )
 
-// Empty state
 const EmptyConversationList = ({ searchQuery, filterBy, onNewChat }) => (
   <motion.div
     initial={{ opacity: 0, scale: 0.95 }}
@@ -494,12 +468,8 @@ const EmptyConversationList = ({ searchQuery, filterBy, onNewChat }) => (
       {searchQuery ? (
         <>
           <Search className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-400 mb-2">
-            No results found
-          </h3>
-          <p className="text-gray-500 text-sm">
-            No conversations match "{searchQuery}"
-          </p>
+          <h3 className="text-lg font-medium text-gray-400 mb-2">No results found</h3>
+          <p className="text-gray-500 text-sm">No conversations match "{searchQuery}"</p>
         </>
       ) : (
         <>
@@ -507,9 +477,7 @@ const EmptyConversationList = ({ searchQuery, filterBy, onNewChat }) => (
           <h3 className="text-lg font-medium text-gray-400 mb-2">
             {filterBy === 'all' ? 'No conversations yet' : `No ${filterBy} conversations`}
           </h3>
-          <p className="text-gray-500 text-sm mb-4">
-            Start a new conversation to get chatting!
-          </p>
+          <p className="text-gray-500 text-sm mb-4">Start a new conversation to get chatting!</p>
           <Button
             variant="primary"
             size="sm"

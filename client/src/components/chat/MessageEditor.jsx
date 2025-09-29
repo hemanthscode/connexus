@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Check, X, Edit3 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -6,6 +6,14 @@ import Button from '../ui/Button.jsx'
 import { useMessageOperations } from '@/hooks/useChat.jsx'
 import { useToast } from '../ui/Toast.jsx'
 import { validateData, chatValidation } from '@/utils/validators.js'
+
+// Configuration constants
+const EDITOR_CONFIG = {
+  MAX_LENGTH: 2000,
+  WARNING_THRESHOLD: 1900,
+  MIN_HEIGHT: '40px',
+  MAX_HEIGHT: '200px'
+}
 
 const MessageEditor = ({
   message,
@@ -26,6 +34,14 @@ const MessageEditor = ({
   
   const textareaRef = useRef(null)
   const originalContent = useRef(message?.content || '')
+
+  // Check if message can be edited
+  const canEdit = useMemo(() => (
+    !message?.isDeleted && 
+    message?.type === 'text' && 
+    !disabled &&
+    message?.sender?._id === message?.currentUserId // Assuming we have current user context
+  ), [message, disabled])
 
   // Update content when message changes
   useEffect(() => {
@@ -59,81 +75,84 @@ const MessageEditor = ({
     }
   }, [editContent, isEditing])
 
-  // Handle keyboard shortcuts
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSaveEdit()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      handleCancelEdit()
-    }
-  }, [])
-
-  // Save edit
-  const handleSaveEdit = useCallback(async () => {
-    if (!hasChanges || !message?._id) {
-      handleCancelEdit()
-      return
-    }
-
-    const trimmedContent = editContent.trim()
-    
-    // Validate content
-    const validation = validateData(chatValidation.editMessage, {
-      messageId: message._id,
-      newContent: trimmedContent
-    })
-
-    if (!validation.isValid) {
-      const errorMessage = Object.values(validation.errors)[0]
-      toast.error(errorMessage)
-      return
-    }
-
-    if (!trimmedContent) {
-      toast.error('Message cannot be empty')
-      return
-    }
-
-    setSaving(true)
-    
-    try {
-      const result = await editMessage(message._id, trimmedContent)
-      
-      if (result.success) {
-        originalContent.current = trimmedContent
-        setHasChanges(false)
-        toast.success('Message updated')
-        onSaveEdit?.(trimmedContent)
+  // Handlers with memoization
+  const handlers = useMemo(() => ({
+    handleKeyDown: (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        handlers.handleSaveEdit()
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        handlers.handleCancelEdit()
       }
-    } catch (error) {
-      console.error('Failed to edit message:', error)
-    } finally {
-      setSaving(false)
+    },
+
+    handleSaveEdit: async () => {
+      if (!hasChanges || !message?._id) {
+        handlers.handleCancelEdit()
+        return
+      }
+
+      const trimmedContent = editContent.trim()
+      
+      // Validate content
+      const validation = validateData(chatValidation.editMessage, {
+        messageId: message._id,
+        newContent: trimmedContent
+      })
+
+      if (!validation.isValid) {
+        const errorMessage = Object.values(validation.errors)[0]
+        toast.error(errorMessage)
+        return
+      }
+
+      if (!trimmedContent) {
+        toast.error('Message cannot be empty')
+        return
+      }
+
+      setSaving(true)
+      
+      try {
+        const result = await editMessage(message._id, trimmedContent)
+        
+        if (result.success) {
+          originalContent.current = trimmedContent
+          setHasChanges(false)
+          toast.success('Message updated')
+          onSaveEdit?.(trimmedContent)
+        }
+      } catch (error) {
+        console.error('Failed to edit message:', error)
+        toast.error('Failed to update message')
+      } finally {
+        setSaving(false)
+      }
+    },
+
+    handleCancelEdit: () => {
+      setEditContent(originalContent.current)
+      setHasChanges(false)
+      onCancelEdit?.()
+    },
+
+    handleStartEdit: () => {
+      if (!message?.content || disabled) return
+      onStartEdit?.()
     }
-  }, [editContent, hasChanges, message, editMessage, toast, onSaveEdit])
-
-  // Cancel edit
-  const handleCancelEdit = useCallback(() => {
-    setEditContent(originalContent.current)
-    setHasChanges(false)
-    onCancelEdit?.()
-  }, [onCancelEdit])
-
-  // Start editing
-  const handleStartEdit = useCallback(() => {
-    if (!message?.content || disabled) return
-    onStartEdit?.()
-  }, [message, disabled, onStartEdit])
+  }), [editContent, hasChanges, message, editMessage, toast, onSaveEdit, onCancelEdit, onStartEdit, disabled])
 
   if (!message) return null
 
-  // Check if message can be edited
-  const canEdit = !message.isDeleted && 
-                  message.type === 'text' && 
-                  !disabled &&
-                  message.sender?._id === message.currentUserId // Assuming we have current user context
+  // Character count with warnings
+  const characterInfo = useMemo(() => {
+    const count = editContent.length
+    const remaining = EDITOR_CONFIG.MAX_LENGTH - count
+    const isWarning = count > EDITOR_CONFIG.WARNING_THRESHOLD
+    
+    return { count, remaining, isWarning }
+  }, [editContent.length])
 
   return (
     <div className={clsx('relative group', className)} {...props}>
@@ -156,8 +175,9 @@ const MessageEditor = ({
               ref={textareaRef}
               value={editContent}
               onChange={(e) => handleContentChange(e.target.value)}
-              onKeyDown={handleKeyDown}
+              onKeyDown={handlers.handleKeyDown}
               disabled={saving}
+              maxLength={EDITOR_CONFIG.MAX_LENGTH}
               className={clsx(
                 'w-full resize-none rounded-lg px-3 py-2 pr-20',
                 'glass border border-cyan-400/50 text-white placeholder-gray-400',
@@ -165,7 +185,10 @@ const MessageEditor = ({
                 'disabled:opacity-50 disabled:cursor-not-allowed',
                 'transition-all duration-200'
               )}
-              style={{ minHeight: '40px', maxHeight: '200px' }}
+              style={{ 
+                minHeight: EDITOR_CONFIG.MIN_HEIGHT, 
+                maxHeight: EDITOR_CONFIG.MAX_HEIGHT 
+              }}
               placeholder="Edit your message..."
             />
 
@@ -174,7 +197,7 @@ const MessageEditor = ({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={handleCancelEdit}
+                onClick={handlers.handleCancelEdit}
                 disabled={saving}
                 className="w-6 h-6"
               >
@@ -184,7 +207,7 @@ const MessageEditor = ({
               <Button
                 variant="primary"
                 size="icon"
-                onClick={handleSaveEdit}
+                onClick={handlers.handleSaveEdit}
                 disabled={!hasChanges || saving}
                 loading={saving}
                 className="w-6 h-6"
@@ -197,16 +220,16 @@ const MessageEditor = ({
           {/* Edit Footer */}
           <div className="flex items-center justify-between text-xs text-gray-500">
             <div className="flex items-center gap-2">
-              {hasChanges && (
-                <span className="text-yellow-400">• Unsaved changes</span>
-              )}
+              {hasChanges && <span className="text-yellow-400">• Unsaved changes</span>}
             </div>
             
             <div className="flex items-center gap-2">
-              <span>{editContent.length}/2000</span>
-              {editContent.length > 1900 && (
+              <span className={characterInfo.isWarning ? 'text-yellow-400' : ''}>
+                {characterInfo.count}/{EDITOR_CONFIG.MAX_LENGTH}
+              </span>
+              {characterInfo.isWarning && (
                 <span className="text-yellow-400">
-                  {2000 - editContent.length} characters remaining
+                  {characterInfo.remaining} characters remaining
                 </span>
               )}
             </div>
@@ -220,9 +243,7 @@ const MessageEditor = ({
             
             {/* Edited Indicator */}
             {message.editedAt && (
-              <span className="text-xs text-gray-500 ml-2 italic">
-                (edited)
-              </span>
+              <span className="text-xs text-gray-500 ml-2 italic">(edited)</span>
             )}
           </div>
 
@@ -236,7 +257,7 @@ const MessageEditor = ({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={handleStartEdit}
+                onClick={handlers.handleStartEdit}
                 className="w-6 h-6 bg-gray-800/90 backdrop-blur-sm"
                 title="Edit message"
               >
@@ -251,16 +272,8 @@ const MessageEditor = ({
 }
 
 // Quick edit button component for message actions
-export const QuickEditButton = ({
-  message,
-  onEdit,
-  disabled = false,
-  className = '',
-  ...props
-}) => {
-  const canEdit = !message?.isDeleted && 
-                  message?.type === 'text' && 
-                  !disabled
+export const QuickEditButton = ({ message, onEdit, disabled = false, className = '', ...props }) => {
+  const canEdit = !message?.isDeleted && message?.type === 'text' && !disabled
 
   if (!canEdit) return null
 
@@ -270,46 +283,12 @@ export const QuickEditButton = ({
       size="icon"
       onClick={() => onEdit?.(message)}
       disabled={disabled}
-      className={clsx('w-8 h-8', className)}
+      className={clsx('w-6 h-6', className)}
       title="Edit message"
       {...props}
     >
-      <Edit3 className="w-4 h-4" />
+      <Edit3 className="w-3 h-3" />
     </Button>
-  )
-}
-
-// Edit history component for showing message edits
-export const MessageEditHistory = ({
-  message,
-  className = '',
-  ...props
-}) => {
-  if (!message?.editHistory?.length) return null
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: 'auto' }}
-      className={clsx('mt-2 space-y-1', className)}
-      {...props}
-    >
-      <div className="text-xs text-gray-500 font-medium">Edit History:</div>
-      
-      <div className="space-y-1 max-h-32 overflow-y-auto">
-        {message.editHistory.map((edit, index) => (
-          <div key={index} className="text-xs">
-            <div className="flex items-center justify-between text-gray-500 mb-1">
-              <span>Edit {index + 1}</span>
-              <span>{new Date(edit.editedAt).toLocaleString()}</span>
-            </div>
-            <div className="glass rounded p-2 text-gray-300">
-              {edit.content}
-            </div>
-          </div>
-        ))}
-      </div>
-    </motion.div>
   )
 }
 

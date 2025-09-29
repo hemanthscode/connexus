@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { RefreshCw, Home, Bug } from 'lucide-react'
+import { RefreshCw, Home, Bug, Copy } from 'lucide-react'
 import Button from './Button.jsx'
 
+// Error boundary class component
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props)
@@ -15,12 +16,10 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
-    // Update state so the next render will show the fallback UI
     return { hasError: true }
   }
 
   componentDidCatch(error, errorInfo) {
-    // Log error details
     console.error('ErrorBoundary caught an error:', error, errorInfo)
     
     this.setState({
@@ -28,10 +27,8 @@ class ErrorBoundary extends React.Component {
       errorInfo: errorInfo
     })
 
-    // Report error to error tracking service
-    if (this.props.onError) {
-      this.props.onError(error, errorInfo)
-    }
+    // Report error to tracking service
+    this.props.onError?.(error, errorInfo)
   }
 
   handleRetry = () => {
@@ -51,7 +48,7 @@ class ErrorBoundary extends React.Component {
     }
   }
 
-  handleReportError = () => {
+  handleReportError = async () => {
     const errorReport = {
       error: this.state.error?.toString(),
       stack: this.state.error?.stack,
@@ -62,15 +59,13 @@ class ErrorBoundary extends React.Component {
       retryCount: this.state.retryCount
     }
 
-    // Copy to clipboard or send to support
-    navigator.clipboard?.writeText(JSON.stringify(errorReport, null, 2))
-      .then(() => {
-        alert('Error report copied to clipboard. Please share this with support.')
-      })
-      .catch(() => {
-        console.log('Error Report:', errorReport)
-        alert('Error report logged to console. Please check developer tools.')
-      })
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(errorReport, null, 2))
+      alert('Error report copied to clipboard. Please share this with support.')
+    } catch {
+      console.log('Error Report:', errorReport)
+      alert('Error report logged to console. Please check developer tools.')
+    }
   }
 
   render() {
@@ -104,14 +99,8 @@ class ErrorBoundary extends React.Component {
             {/* Error Icon */}
             <motion.div
               className="w-24 h-24 mx-auto mb-6 rounded-full glass flex items-center justify-center"
-              animate={{
-                rotate: [0, -10, 10, -10, 0],
-              }}
-              transition={{
-                duration: 0.5,
-                repeat: 3,
-                delay: 0.2,
-              }}
+              animate={{ rotate: [0, -10, 10, -10, 0] }}
+              transition={{ duration: 0.5, repeat: 3, delay: 0.2 }}
             >
               <Bug className="w-12 h-12 text-red-400" />
             </motion.div>
@@ -122,12 +111,8 @@ class ErrorBoundary extends React.Component {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
             >
-              <h1 className="text-2xl font-bold text-white mb-3">
-                {title}
-              </h1>
-              <p className="text-gray-400 mb-6">
-                {message}
-              </p>
+              <h1 className="text-2xl font-bold text-white mb-3">{title}</h1>
+              <p className="text-gray-400 mb-6">{message}</p>
             </motion.div>
 
             {/* Action Buttons */}
@@ -170,8 +155,9 @@ class ErrorBoundary extends React.Component {
                   onClick={this.handleReportError}
                   variant="ghost"
                   size="sm"
+                  leftIcon={<Copy className="w-4 h-4" />}
                 >
-                  Report Error
+                  Copy Error Report
                 </Button>
               </motion.div>
             )}
@@ -225,27 +211,19 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// Hook version for functional components
+// Hook for functional components
 export const useErrorHandler = () => {
-  const [error, setError] = React.useState(null)
+  const [error, setError] = useState(null)
 
-  const resetError = React.useCallback(() => {
-    setError(null)
-  }, [])
-
-  const captureError = React.useCallback((error) => {
+  const resetError = useCallback(() => setError(null), [])
+  const captureError = useCallback((error) => {
     console.error('Error captured:', error)
     setError(error)
   }, [])
 
-  React.useEffect(() => {
-    const handleError = (event) => {
-      captureError(event.error)
-    }
-
-    const handleUnhandledRejection = (event) => {
-      captureError(event.reason)
-    }
+  useEffect(() => {
+    const handleError = (event) => captureError(event.error)
+    const handleUnhandledRejection = (event) => captureError(event.reason)
 
     window.addEventListener('error', handleError)
     window.addEventListener('unhandledrejection', handleUnhandledRejection)
@@ -259,14 +237,12 @@ export const useErrorHandler = () => {
   return { error, resetError, captureError }
 }
 
-// Async error boundary for handling async errors
+// Async error boundary wrapper
 export const AsyncErrorBoundary = ({ children, onError, fallback }) => {
-  const { error, resetError, captureError } = useErrorHandler()
+  const { error, resetError } = useErrorHandler()
 
-  React.useEffect(() => {
-    if (error && onError) {
-      onError(error)
-    }
+  useEffect(() => {
+    if (error && onError) onError(error)
   }, [error, onError])
 
   if (error) {

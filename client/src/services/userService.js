@@ -2,11 +2,41 @@ import api, { apiHelpers } from './api.js'
 import { API_ENDPOINTS } from '@/utils/constants.js'
 import { validateData, userValidation } from '@/utils/validators.js'
 
-/**
- * Get user profile by ID
- * @param {string} userId - User ID
- * @returns {Promise<object>} User profile data
- */
+// Configuration constants
+const AVATAR_CONFIG = {
+  MAX_SIZE: 5 * 1024 * 1024, // 5MB
+  ALLOWED_TYPES: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  FALLBACK_API: 'https://ui-avatars.com/api'
+}
+
+const USER_STATUS = {
+  VALID: ['online', 'away', 'offline'],
+  ONLINE_THRESHOLD: 5 // minutes
+}
+
+// Utility functions
+const validateAndExecute = async (validationSchema, data, apiCall) => {
+  const validation = validateData(validationSchema, data)
+  if (!validation.isValid) {
+    throw new Error(Object.values(validation.errors)[0])
+  }
+  return await apiCall(validation.data)
+}
+
+const updateStoredUserData = (userData) => {
+  try {
+    Promise.resolve(import('@/utils/encryption.js')).then(({ encryptLocalStorageData }) => {
+      Promise.resolve(import('@/utils/constants.js')).then(({ STORAGE_KEYS }) => {
+        const encryptedData = encryptLocalStorageData(userData)
+        localStorage.setItem(STORAGE_KEYS.USER_DATA, encryptedData)
+      })
+    })
+  } catch (error) {
+    console.warn('Failed to update stored user data:', error)
+  }
+}
+
+// Core API functions
 export const getUserProfile = async (userId) => {
   try {
     const response = await api.get(API_ENDPOINTS.USERS.PROFILE(userId))
@@ -16,10 +46,6 @@ export const getUserProfile = async (userId) => {
   }
 }
 
-/**
- * Get current user profile
- * @returns {Promise<object>} Current user profile data
- */
 export const getCurrentUserProfile = async () => {
   try {
     const response = await api.get(API_ENDPOINTS.USERS.ME)
@@ -29,71 +55,44 @@ export const getCurrentUserProfile = async () => {
   }
 }
 
-/**
- * Update user profile
- * @param {object} profileData - Profile update data
- * @returns {Promise<object>} Updated profile data
- */
 export const updateUserProfile = async (profileData) => {
   try {
-    // Validate input data
-    const validation = validateData(userValidation.updateProfile, profileData)
-    if (!validation.isValid) {
-      throw new Error(Object.values(validation.errors)[0])
+    const result = await validateAndExecute(
+      userValidation.updateProfile,
+      profileData,
+      (data) => api.put(API_ENDPOINTS.USERS.ME, data)
+    )
+    
+    const response = apiHelpers.handleSuccess(result)
+    
+    // Update stored user data
+    if (response.success && response.data) {
+      updateStoredUserData(response.data)
     }
     
-    const response = await api.put(API_ENDPOINTS.USERS.ME, validation.data)
-    const result = apiHelpers.handleSuccess(response)
-    
-    // Update stored user data if successful
-    if (result.success && result.data) {
-      try {
-        const { encryptLocalStorageData } = await import('@/utils/encryption.js')
-        const { STORAGE_KEYS } = await import('@/utils/constants.js')
-        
-        const encryptedUserData = encryptLocalStorageData(result.data)
-        localStorage.setItem(STORAGE_KEYS.USER_DATA, encryptedUserData)
-      } catch (storageError) {
-        console.warn('Failed to update stored user data:', storageError)
-      }
-    }
-    
-    return result
+    return response
   } catch (error) {
     throw apiHelpers.handleError(error)
   }
 }
 
-/**
- * Search users
- * @param {string} query - Search query
- * @param {number} limit - Results limit
- * @returns {Promise<object>} Search results
- */
 export const searchUsers = async (query, limit = 10) => {
   try {
-    // Validate input data
-    const validation = validateData(userValidation.searchUsers, { query, limit })
-    if (!validation.isValid) {
-      throw new Error(Object.values(validation.errors)[0])
-    }
+    const result = await validateAndExecute(
+      userValidation.searchUsers,
+      { query, limit },
+      (data) => {
+        const config = apiHelpers.createPaginationConfig(1, data.limit, { q: data.query })
+        return api.get(API_ENDPOINTS.USERS.SEARCH, config)
+      }
+    )
     
-    const config = apiHelpers.createPaginationConfig(1, validation.data.limit, {
-      q: validation.data.query,
-    })
-    
-    const response = await api.get(API_ENDPOINTS.USERS.SEARCH, config)
-    return apiHelpers.handleSuccess(response)
+    return apiHelpers.handleSuccess(result)
   } catch (error) {
     throw apiHelpers.handleError(error)
   }
 }
 
-/**
- * Upload user avatar
- * @param {File} file - Avatar image file
- * @returns {Promise<object>} Upload response with avatar URL
- */
 export const uploadAvatar = async (file) => {
   try {
     // Validate file
@@ -101,22 +100,18 @@ export const uploadAvatar = async (file) => {
       throw new Error('Please select a valid image file')
     }
     
-    // Check file size (5MB limit)
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > AVATAR_CONFIG.MAX_SIZE) {
       throw new Error('File size must be less than 5MB')
     }
     
-    // Check file type
-    if (!file.type.startsWith('image/')) {
-      throw new Error('Please select an image file')
+    if (!AVATAR_CONFIG.ALLOWED_TYPES.some(type => file.type === type)) {
+      throw new Error('Please select a valid image file (JPEG, PNG, WebP, or GIF)')
     }
     
     const formData = apiHelpers.createFormData({ avatar: file })
     
     const response = await api.post(API_ENDPOINTS.UPLOAD.AVATAR, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' }
     })
     
     return apiHelpers.handleSuccess(response)
@@ -125,15 +120,9 @@ export const uploadAvatar = async (file) => {
   }
 }
 
-/**
- * Update user status (online, away, offline)
- * @param {string} status - User status
- * @returns {Promise<object>} Update response
- */
 export const updateUserStatus = async (status) => {
   try {
-    const validStatuses = ['online', 'away', 'offline']
-    if (!validStatuses.includes(status)) {
+    if (!USER_STATUS.VALID.includes(status)) {
       throw new Error('Invalid status. Must be online, away, or offline')
     }
     
@@ -144,13 +133,8 @@ export const updateUserStatus = async (status) => {
   }
 }
 
-/**
- * Get user's conversations count
- * @returns {Promise<object>} Conversations count
- */
 export const getUserStats = async () => {
   try {
-    // This would typically be a separate endpoint, but for now we can get it from profile
     const response = await api.get(API_ENDPOINTS.USERS.ME)
     const result = apiHelpers.handleSuccess(response)
     
@@ -158,6 +142,7 @@ export const getUserStats = async () => {
       ...result,
       data: {
         contactsCount: result.data.contactsCount || 0,
+        conversationsCount: result.data.conversationsCount || 0,
         // Add other stats as needed
       }
     }
@@ -166,62 +151,45 @@ export const getUserStats = async () => {
   }
 }
 
-/**
- * Block a user
- * @param {string} userId - User ID to block
- * @returns {Promise<object>} Block response
- */
+// User blocking operations
+const userBlockingOperations = {
+  block: (userId) => api.post(`${API_ENDPOINTS.USERS.ME}/block`, { userId }),
+  unblock: (userId) => api.post(`${API_ENDPOINTS.USERS.ME}/unblock`, { userId }),
+  getBlocked: () => api.get(`${API_ENDPOINTS.USERS.ME}/blocked`)
+}
+
 export const blockUser = async (userId) => {
   try {
-    if (!userId) {
-      throw new Error('User ID is required')
-    }
+    if (!userId) throw new Error('User ID is required')
     
-    // This would typically be a separate endpoint
-    // For now, we'll use a generic approach
-    const response = await api.post(`${API_ENDPOINTS.USERS.ME}/block`, { userId })
+    const response = await userBlockingOperations.block(userId)
     return apiHelpers.handleSuccess(response)
   } catch (error) {
     throw apiHelpers.handleError(error)
   }
 }
 
-/**
- * Unblock a user
- * @param {string} userId - User ID to unblock
- * @returns {Promise<object>} Unblock response
- */
 export const unblockUser = async (userId) => {
   try {
-    if (!userId) {
-      throw new Error('User ID is required')
-    }
+    if (!userId) throw new Error('User ID is required')
     
-    const response = await api.post(`${API_ENDPOINTS.USERS.ME}/unblock`, { userId })
+    const response = await userBlockingOperations.unblock(userId)
     return apiHelpers.handleSuccess(response)
   } catch (error) {
     throw apiHelpers.handleError(error)
   }
 }
 
-/**
- * Get blocked users list
- * @returns {Promise<object>} Blocked users list
- */
 export const getBlockedUsers = async () => {
   try {
-    const response = await api.get(`${API_ENDPOINTS.USERS.ME}/blocked`)
+    const response = await userBlockingOperations.getBlocked()
     return apiHelpers.handleSuccess(response)
   } catch (error) {
     throw apiHelpers.handleError(error)
   }
 }
 
-/**
- * Check if user is online based on last seen
- * @param {string} lastSeen - Last seen timestamp
- * @returns {boolean} Online status
- */
+// Utility functions
 export const checkUserOnlineStatus = (lastSeen) => {
   if (!lastSeen) return false
   
@@ -229,25 +197,14 @@ export const checkUserOnlineStatus = (lastSeen) => {
   const now = new Date()
   const diffInMinutes = (now - lastSeenDate) / (1000 * 60)
   
-  // Consider online if last seen within 5 minutes
-  return diffInMinutes <= 5
+  return diffInMinutes <= USER_STATUS.ONLINE_THRESHOLD
 }
 
-/**
- * Format user display name
- * @param {object} user - User object
- * @returns {string} Formatted display name
- */
 export const formatUserDisplayName = (user) => {
   if (!user) return 'Unknown User'
   return user.name || user.email || 'Unknown User'
 }
 
-/**
- * Get user avatar URL with fallback
- * @param {object} user - User object
- * @returns {string} Avatar URL
- */
 export const getUserAvatarUrl = (user) => {
   if (!user) return null
   
@@ -261,21 +218,37 @@ export const getUserAvatarUrl = (user) => {
     .slice(0, 2)
     .join('')
   
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&background=0ea5e9&color=fff&size=200&rounded=true&bold=true`
+  const params = new URLSearchParams({
+    name: initials,
+    background: '0ea5e9',
+    color: 'fff',
+    size: '200',
+    rounded: 'true',
+    bold: 'true'
+  })
+  
+  return `${AVATAR_CONFIG.FALLBACK_API}/?${params.toString()}`
 }
 
-// Export user service object
+// Export consolidated service
 export default {
+  // Profile operations
   getUserProfile,
   getCurrentUserProfile,
   updateUserProfile,
+  getUserStats,
+
+  // User operations
   searchUsers,
   uploadAvatar,
   updateUserStatus,
-  getUserStats,
+
+  // Blocking operations
   blockUser,
   unblockUser,
   getBlockedUsers,
+
+  // Utility functions
   checkUserOnlineStatus,
   formatUserDisplayName,
   getUserAvatarUrl,

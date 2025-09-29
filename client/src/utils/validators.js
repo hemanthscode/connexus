@@ -1,91 +1,83 @@
 import Joi from 'joi'
 import { VALIDATION_RULES } from './constants.js'
 
-// Custom validation messages
-const messages = {
+// Base validation messages
+const MESSAGES = {
   'string.empty': 'This field is required',
   'string.min': 'Must be at least {#limit} characters',
   'string.max': 'Must be less than {#limit} characters',
   'string.email': 'Please enter a valid email address',
+  'string.uri': 'Please enter a valid URL',
   'any.required': 'This field is required',
-  'string.pattern.base': 'Please enter a valid format',
+  'any.only': 'Invalid value selected',
+  'array.min': 'At least {#limit} item(s) required',
+  'array.max': 'Maximum {#limit} item(s) allowed',
 }
 
-// Auth validation schemas
+// Common field schemas
+const commonFields = {
+  email: () => Joi.string()
+    .email({ tlds: { allow: false } })
+    .max(VALIDATION_RULES.EMAIL.MAX_LENGTH)
+    .trim()
+    .lowercase(),
+    
+  password: (minLength = VALIDATION_RULES.PASSWORD.MIN_LENGTH) => Joi.string()
+    .min(minLength)
+    .max(VALIDATION_RULES.PASSWORD.MAX_LENGTH),
+    
+  name: () => Joi.string()
+    .min(VALIDATION_RULES.USERNAME.MIN_LENGTH)
+    .max(VALIDATION_RULES.USERNAME.MAX_LENGTH)
+    .trim(),
+    
+  optionalUrl: () => Joi.string()
+    .uri()
+    .allow(null, ''),
+    
+  messageContent: () => Joi.string()
+    .min(1)
+    .max(VALIDATION_RULES.MESSAGE.MAX_LENGTH)
+    .trim(),
+}
+
+// Authentication validation schemas
 export const authValidation = {
-  // Register validation
   register: Joi.object({
-    name: Joi.string()
-      .min(VALIDATION_RULES.USERNAME.MIN_LENGTH)
-      .max(VALIDATION_RULES.USERNAME.MAX_LENGTH)
-      .trim()
-      .required()
-      .messages(messages),
-    
-    email: Joi.string()
-      .email({ tlds: { allow: false } })
-      .max(VALIDATION_RULES.EMAIL.MAX_LENGTH)
-      .trim()
-      .lowercase()
-      .required()
-      .messages(messages),
-    
-    password: Joi.string()
-      .min(VALIDATION_RULES.PASSWORD.MIN_LENGTH)
-      .max(VALIDATION_RULES.PASSWORD.MAX_LENGTH)
-      .required()
-      .messages({
-        ...messages,
-        'string.min': 'Password must be at least 6 characters',
-      }),
-    
+    name: commonFields.name().required().messages(MESSAGES),
+    email: commonFields.email().required().messages(MESSAGES),
+    password: commonFields.password().required().messages({
+      ...MESSAGES,
+      'string.min': 'Password must be at least 6 characters',
+    }),
     confirmPassword: Joi.string()
       .valid(Joi.ref('password'))
       .required()
       .messages({
-        ...messages,
+        ...MESSAGES,
         'any.only': 'Passwords do not match',
       }),
   }),
 
-  // Login validation
   login: Joi.object({
-    email: Joi.string()
-      .email({ tlds: { allow: false } })
-      .trim()
-      .lowercase()
-      .required()
-      .messages(messages),
-    
-    password: Joi.string()
-      .min(VALIDATION_RULES.PASSWORD.MIN_LENGTH)
-      .required()
-      .messages(messages),
+    email: commonFields.email().required().messages(MESSAGES),
+    password: commonFields.password().required().messages(MESSAGES),
   }),
 
-  // Change password validation
   changePassword: Joi.object({
-    currentPassword: Joi.string()
-      .required()
-      .messages({
-        ...messages,
-        'string.empty': 'Current password is required',
-      }),
-    
-    newPassword: Joi.string()
-      .min(VALIDATION_RULES.PASSWORD.MIN_LENGTH)
-      .max(VALIDATION_RULES.PASSWORD.MAX_LENGTH)
-      .required()
-      .messages({
-        ...messages,
-        'string.min': 'New password must be at least 6 characters',
-      }),
-    
+    currentPassword: Joi.string().required().messages({
+      ...MESSAGES,
+      'string.empty': 'Current password is required',
+    }),
+    newPassword: commonFields.password().required().messages({
+      ...MESSAGES,
+      'string.min': 'New password must be at least 6 characters',
+    }),
     confirmNewPassword: Joi.string()
       .valid(Joi.ref('newPassword'))
       .required()
       .messages({
-        ...messages,
+        ...MESSAGES,
         'any.only': 'New passwords do not match',
       }),
   }),
@@ -93,58 +85,28 @@ export const authValidation = {
 
 // User profile validation schemas
 export const userValidation = {
-  // Update profile validation
   updateProfile: Joi.object({
-    name: Joi.string()
-      .min(VALIDATION_RULES.USERNAME.MIN_LENGTH)
-      .max(VALIDATION_RULES.USERNAME.MAX_LENGTH)
-      .trim()
-      .optional()
-      .messages(messages),
-    
-    email: Joi.string()
-      .email({ tlds: { allow: false } })
-      .max(VALIDATION_RULES.EMAIL.MAX_LENGTH)
-      .trim()
-      .lowercase()
-      .optional()
-      .messages(messages),
-    
+    name: commonFields.name().optional().messages(MESSAGES),
+    email: commonFields.email().optional().messages(MESSAGES),
     bio: Joi.string()
       .max(VALIDATION_RULES.BIO.MAX_LENGTH)
       .trim()
       .allow('')
       .optional()
-      .messages(messages),
-    
+      .messages(MESSAGES),
     location: Joi.string()
       .max(VALIDATION_RULES.LOCATION.MAX_LENGTH)
       .trim()
       .allow('')
       .optional()
-      .messages(messages),
-    
-    avatar: Joi.string()
-      .uri()
-      .allow(null, '')
-      .optional()
-      .messages({
-        ...messages,
-        'string.uri': 'Please enter a valid URL for avatar',
-      }),
-    
+      .messages(MESSAGES),
+    avatar: commonFields.optionalUrl().optional().messages(MESSAGES),
     socialLinks: Joi.object()
-      .pattern(
-        Joi.string(),
-        Joi.string().uri().messages({
-          'string.uri': 'Please enter a valid URL',
-        })
-      )
+      .pattern(Joi.string(), Joi.string().uri())
       .optional()
-      .messages(messages),
+      .messages(MESSAGES),
   }),
 
-  // Search users validation
   searchUsers: Joi.object({
     query: Joi.string()
       .min(2)
@@ -152,53 +114,35 @@ export const userValidation = {
       .trim()
       .required()
       .messages({
-        ...messages,
+        ...MESSAGES,
         'string.min': 'Search query must be at least 2 characters',
       }),
-    
     limit: Joi.number()
       .integer()
       .min(1)
       .max(50)
       .default(10)
-      .optional()
-      .messages(messages),
+      .optional(),
   }),
 }
 
 // Chat validation schemas
 export const chatValidation = {
-  // Send message validation
   sendMessage: Joi.object({
-    conversationId: Joi.string()
-      .required()
-      .messages({
-        ...messages,
-        'string.empty': 'Conversation ID is required',
-      }),
-    
-    content: Joi.string()
-      .min(1)
-      .max(VALIDATION_RULES.MESSAGE.MAX_LENGTH)
-      .trim()
-      .required()
-      .messages({
-        ...messages,
-        'string.min': 'Message cannot be empty',
-        'string.max': `Message must be less than ${VALIDATION_RULES.MESSAGE.MAX_LENGTH} characters`,
-      }),
-    
+    conversationId: Joi.string().required().messages({
+      ...MESSAGES,
+      'string.empty': 'Conversation ID is required',
+    }),
+    content: commonFields.messageContent().required().messages({
+      ...MESSAGES,
+      'string.min': 'Message cannot be empty',
+      'string.max': `Message must be less than ${VALIDATION_RULES.MESSAGE.MAX_LENGTH} characters`,
+    }),
     type: Joi.string()
       .valid('text', 'image', 'file')
       .default('text')
-      .optional()
-      .messages(messages),
-    
-    replyTo: Joi.string()
-      .allow(null)
-      .optional()
-      .messages(messages),
-    
+      .optional(),
+    replyTo: Joi.string().allow(null).optional(),
     attachments: Joi.array()
       .items(Joi.object({
         name: Joi.string().required(),
@@ -210,33 +154,22 @@ export const chatValidation = {
       .default([])
       .optional()
       .messages({
-        ...messages,
+        ...MESSAGES,
         'array.max': 'Maximum 5 attachments allowed',
       }),
   }),
 
-  // Edit message validation
   editMessage: Joi.object({
-    messageId: Joi.string()
-      .required()
-      .messages({
-        ...messages,
-        'string.empty': 'Message ID is required',
-      }),
-    
-    newContent: Joi.string()
-      .min(1)
-      .max(VALIDATION_RULES.MESSAGE.MAX_LENGTH)
-      .trim()
-      .required()
-      .messages({
-        ...messages,
-        'string.min': 'Message cannot be empty',
-        'string.max': `Message must be less than ${VALIDATION_RULES.MESSAGE.MAX_LENGTH} characters`,
-      }),
+    messageId: Joi.string().required().messages({
+      ...MESSAGES,
+      'string.empty': 'Message ID is required',
+    }),
+    newContent: commonFields.messageContent().required().messages({
+      ...MESSAGES,
+      'string.min': 'Message cannot be empty',
+    }),
   }),
 
-  // Create group validation
   createGroup: Joi.object({
     name: Joi.string()
       .min(VALIDATION_RULES.GROUP_NAME.MIN_LENGTH)
@@ -244,66 +177,41 @@ export const chatValidation = {
       .trim()
       .required()
       .messages({
-        ...messages,
+        ...MESSAGES,
         'string.min': 'Group name is required',
       }),
-    
     description: Joi.string()
       .max(VALIDATION_RULES.GROUP_DESCRIPTION.MAX_LENGTH)
       .trim()
       .allow('')
       .optional()
-      .messages(messages),
-    
+      .messages(MESSAGES),
     participants: Joi.array()
       .items(Joi.string())
       .min(1)
       .max(100)
       .default([])
       .optional()
-      .messages({
-        ...messages,
-        'array.min': 'At least one participant is required',
-        'array.max': 'Maximum 100 participants allowed',
-      }),
-    
-    avatar: Joi.string()
-      .uri()
-      .allow(null, '')
-      .optional()
-      .messages({
-        ...messages,
-        'string.uri': 'Please enter a valid URL for group avatar',
-      }),
+      .messages(MESSAGES),
+    avatar: commonFields.optionalUrl().optional().messages(MESSAGES),
   }),
 
-  // Update group validation
   updateGroup: Joi.object({
     name: Joi.string()
       .min(VALIDATION_RULES.GROUP_NAME.MIN_LENGTH)
       .max(VALIDATION_RULES.GROUP_NAME.MAX_LENGTH)
       .trim()
       .optional()
-      .messages(messages),
-    
+      .messages(MESSAGES),
     description: Joi.string()
       .max(VALIDATION_RULES.GROUP_DESCRIPTION.MAX_LENGTH)
       .trim()
       .allow('')
       .optional()
-      .messages(messages),
-    
-    avatar: Joi.string()
-      .uri()
-      .allow(null, '')
-      .optional()
-      .messages({
-        ...messages,
-        'string.uri': 'Please enter a valid URL for group avatar',
-      }),
+      .messages(MESSAGES),
+    avatar: commonFields.optionalUrl().optional().messages(MESSAGES),
   }),
 
-  // Add participants validation
   addParticipants: Joi.object({
     participants: Joi.array()
       .items(Joi.string())
@@ -311,58 +219,54 @@ export const chatValidation = {
       .max(20)
       .required()
       .messages({
-        ...messages,
+        ...MESSAGES,
         'array.min': 'At least one participant is required',
         'array.max': 'Maximum 20 participants can be added at once',
       }),
   }),
 
-  // Change role validation
   changeRole: Joi.object({
-    participantId: Joi.string()
-      .required()
-      .messages({
-        ...messages,
-        'string.empty': 'Participant ID is required',
-      }),
-    
+    participantId: Joi.string().required().messages({
+      ...MESSAGES,
+      'string.empty': 'Participant ID is required',
+    }),
     role: Joi.string()
       .valid('admin', 'moderator', 'member')
       .required()
       .messages({
-        ...messages,
+        ...MESSAGES,
         'any.only': 'Invalid role specified',
       }),
   }),
 
-  // Direct conversation validation
   createDirectConversation: Joi.object({
-    participantId: Joi.string()
-      .required()
-      .messages({
-        ...messages,
-        'string.empty': 'Participant ID is required',
-      }),
+    participantId: Joi.string().required().messages({
+      ...MESSAGES,
+      'string.empty': 'Participant ID is required',
+    }),
   }),
 }
 
-// File upload validation schemas
+// File validation schemas
 export const fileValidation = {
-  // File upload validation
   uploadFile: Joi.object({
     file: Joi.object({
       name: Joi.string().required(),
-      size: Joi.number().integer().min(1).max(10 * 1024 * 1024).required(), // 10MB max
+      size: Joi.number()
+        .integer()
+        .min(1)
+        .max(10 * 1024 * 1024) // 10MB
+        .required(),
       type: Joi.string().required(),
     }).required().messages({
-      ...messages,
+      ...MESSAGES,
       'object.base': 'File is required',
       'number.max': 'File size must be less than 10MB',
     }),
   }),
 }
 
-// Generic validation function
+// Main validation function
 export const validateData = (schema, data) => {
   const { error, value } = schema.validate(data, {
     abortEarly: false,
@@ -371,81 +275,59 @@ export const validateData = (schema, data) => {
   })
   
   if (error) {
-    const validationErrors = {}
+    const errors = {}
     error.details.forEach(detail => {
-      const field = detail.path.join('.')
-      validationErrors[field] = detail.message
+      errors[detail.path.join('.')] = detail.message
     })
-    return { isValid: false, errors: validationErrors, data: null }
+    return { isValid: false, errors, data: null }
   }
   
   return { isValid: true, errors: null, data: value }
 }
 
-// Validate email format only
+// Quick validation helpers
 export const isValidEmail = (email) => {
-  const emailSchema = Joi.string().email({ tlds: { allow: false } })
-  const { error } = emailSchema.validate(email)
+  const { error } = commonFields.email().validate(email)
   return !error
 }
 
-// Validate password strength
+export const isValidURL = (url) => {
+  const { error } = Joi.string().uri().validate(url)
+  return !error
+}
+
+export const isValidFileType = (fileType, allowedTypes) => {
+  if (!fileType || !allowedTypes) return false
+  const types = allowedTypes.split(',').map(t => t.trim())
+  return types.some(type => 
+    type.endsWith('/*') ? fileType.startsWith(type.slice(0, -2)) : fileType === type
+  )
+}
+
+// Password strength validation
 export const validatePasswordStrength = (password) => {
   if (!password || password.length < 6) {
     return { isStrong: false, message: 'Password must be at least 6 characters' }
   }
   
-  const hasUppercase = /[A-Z]/.test(password)
-  const hasLowercase = /[a-z]/.test(password)
-  const hasNumbers = /\d/.test(password)
-  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password)
+  const checks = [
+    { test: /[a-z]/, name: 'lowercase letters' },
+    { test: /[A-Z]/, name: 'uppercase letters' },
+    { test: /\d/, name: 'numbers' },
+    { test: /[!@#$%^&*(),.?":{}|<>]/, name: 'special characters' },
+    { test: /.{8,}/, name: 'at least 8 characters' },
+  ]
   
-  let strength = 0
-  let suggestions = []
-  
-  if (hasLowercase) strength++
-  else suggestions.push('lowercase letters')
-  
-  if (hasUppercase) strength++
-  else suggestions.push('uppercase letters')
-  
-  if (hasNumbers) strength++
-  else suggestions.push('numbers')
-  
-  if (hasSpecialChar) strength++
-  else suggestions.push('special characters')
-  
-  if (password.length >= 8) strength++
-  else suggestions.push('at least 8 characters')
+  const passed = checks.filter(check => check.test.test(password))
+  const failed = checks.filter(check => !check.test.test(password))
   
   const strengthLevels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong']
-  const level = strengthLevels[Math.min(strength, 4)]
+  const level = strengthLevels[Math.min(passed.length, 4)]
   
   return {
-    isStrong: strength >= 3,
+    isStrong: passed.length >= 3,
     strength: level,
-    score: strength,
-    suggestions: suggestions.length > 0 ? `Include ${suggestions.join(', ')}` : null
+    score: passed.length,
+    suggestions: failed.length > 0 ? `Include ${failed.map(f => f.name).join(', ')}` : null
   }
-}
-
-// Validate URL format
-export const isValidURL = (url) => {
-  const urlSchema = Joi.string().uri()
-  const { error } = urlSchema.validate(url)
-  return !error
-}
-
-// Validate file type
-export const isValidFileType = (fileType, allowedTypes) => {
-  if (!fileType || !allowedTypes) return false
-  
-  const types = allowedTypes.split(',').map(type => type.trim())
-  return types.some(type => {
-    if (type.endsWith('/*')) {
-      const baseType = type.slice(0, -2)
-      return fileType.startsWith(baseType)
-    }
-    return fileType === type
-  })
 }

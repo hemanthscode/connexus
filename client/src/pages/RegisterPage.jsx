@@ -1,13 +1,63 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { User, Mail, Lock, Eye, EyeOff, UserPlus, Github, Chrome } from 'lucide-react'
+import { User, Mail, Lock, UserPlus } from 'lucide-react'
 import AuthLayout from '@/components/layout/AuthLayout.jsx'
 import SocialLogin from '@/components/auth/SocialLogin.jsx'
 import PasswordStrength from '@/components/auth/PasswordStrength.jsx'
 import Button from '@/components/ui/Button.jsx'
 import Input from '@/components/ui/Input.jsx'
 import { useRegister } from '@/hooks/useAuth.jsx'
+import { createPasswordToggle, getSocialProviders, getFormAnimationProps } from '@/utils/authHelpers.jsx'
+
+// Configuration constants
+const REGISTER_CONFIG = {
+  TITLE: 'Create your account',
+  SUBTITLE: 'Join Connexus and start connecting with others',
+  SUBMIT_TEXT: 'Create Account',
+  FOOTER_TEXT: 'Already have an account?',
+  FOOTER_LINK_TEXT: 'Sign in here',
+  FOOTER_LINK_TO: '/login'
+}
+
+const FORM_FIELDS = [
+  {
+    name: 'name',
+    label: 'Full Name',
+    type: 'text',
+    placeholder: 'Enter your full name',
+    icon: User,
+    required: true
+  },
+  {
+    name: 'email',
+    label: 'Email Address',
+    type: 'email',
+    placeholder: 'Enter your email address',
+    icon: Mail,
+    required: true
+  },
+  {
+    name: 'password',
+    label: 'Password',
+    type: 'password',
+    placeholder: 'Create a strong password',
+    icon: Lock,
+    required: true,
+    hasToggle: true,
+    showStrength: true
+  },
+  {
+    name: 'confirmPassword',
+    label: 'Confirm Password',
+    type: 'password',
+    placeholder: 'Confirm your password',
+    icon: Lock,
+    required: true,
+    hasToggle: true,
+    toggleKey: 'confirmPassword'
+  }
+]
 
 const RegisterPage = () => {
   const {
@@ -23,93 +73,27 @@ const RegisterPage = () => {
     clearError
   } = useRegister()
 
+  const socialProviders = getSocialProviders('sign up')
+
   // Clear errors on component mount
   useEffect(() => {
     clearError()
   }, [clearError])
 
-  const formFields = [
-    {
-      name: 'name',
-      label: 'Full Name',
-      type: 'text',
-      placeholder: 'Enter your full name',
-      icon: <User className="w-5 h-5" />,
-      value: formData.name,
-      error: validationErrors.name,
-      required: true
-    },
-    {
-      name: 'email',
-      label: 'Email Address',
-      type: 'email',
-      placeholder: 'Enter your email address',
-      icon: <Mail className="w-5 h-5" />,
-      value: formData.email,
-      error: validationErrors.email,
-      required: true
-    },
-    {
-      name: 'password',
-      label: 'Password',
-      type: showPassword ? 'text' : 'password',
-      placeholder: 'Create a strong password',
-      icon: <Lock className="w-5 h-5" />,
-      rightIcon: (
-        <button
-          type="button"
-          onClick={() => togglePasswordVisibility('password')}
-          className="text-gray-400 hover:text-gray-300 transition-colors"
-        >
-          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-        </button>
-      ),
-      value: formData.password,
-      error: validationErrors.password,
-      required: true,
-      showStrength: true
-    },
-    {
-      name: 'confirmPassword',
-      label: 'Confirm Password',
-      type: showConfirmPassword ? 'text' : 'password',
-      placeholder: 'Confirm your password',
-      icon: <Lock className="w-5 h-5" />,
-      rightIcon: (
-        <button
-          type="button"
-          onClick={() => togglePasswordVisibility('confirmPassword')}
-          className="text-gray-400 hover:text-gray-300 transition-colors"
-        >
-          {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-        </button>
-      ),
-      value: formData.confirmPassword,
-      error: validationErrors.confirmPassword,
-      required: true
-    }
-  ]
+  const getFieldToggleState = (field) => {
+    if (field.toggleKey === 'confirmPassword') return showConfirmPassword
+    return showPassword
+  }
 
-  const socialProviders = [
-    {
-      name: 'Google',
-      icon: <Chrome className="w-5 h-5" />,
-      color: 'bg-red-500/20 hover:bg-red-500/30 border-red-500/50 text-red-400',
-      onClick: () => {/* Handle Google signup */}
-    },
-    {
-      name: 'GitHub',
-      icon: <Github className="w-5 h-5" />,
-      color: 'bg-gray-500/20 hover:bg-gray-500/30 border-gray-500/50 text-gray-400',
-      onClick: () => {/* Handle GitHub signup */}
+  const getToggleHandler = (field) => {
+    if (field.toggleKey === 'confirmPassword') {
+      return () => togglePasswordVisibility('confirmPassword')
     }
-  ]
+    return () => togglePasswordVisibility('password')
+  }
 
   return (
-    <AuthLayout
-      title="Create your account"
-      subtitle="Join Connexus and start connecting with others"
-    >
+    <AuthLayout title={REGISTER_CONFIG.TITLE} subtitle={REGISTER_CONFIG.SUBTITLE}>
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Global Error */}
         {error && (
@@ -124,36 +108,39 @@ const RegisterPage = () => {
 
         {/* Form Fields */}
         <div className="space-y-4">
-          {formFields.map((field, index) => (
-            <motion.div
-              key={field.name}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                {field.label} {field.required && <span className="text-red-400">*</span>}
-              </label>
-              <Input
-                type={field.type}
-                placeholder={field.placeholder}
-                value={field.value}
-                onChange={(e) => handleInputChange(field.name, e.target.value)}
-                leftIcon={field.icon}
-                rightIcon={field.rightIcon}
-                error={field.error}
-                disabled={isLoading}
-                className="w-full"
-              />
-              
-              {/* Password Strength Indicator */}
-              {field.showStrength && field.value && (
-                <div className="mt-2">
-                  <PasswordStrength password={field.value} />
-                </div>
-              )}
-            </motion.div>
-          ))}
+          {FORM_FIELDS.map((field, index) => {
+            const showToggle = getFieldToggleState(field)
+            const fieldProps = {
+              type: field.hasToggle ? (showToggle ? 'text' : 'password') : field.type,
+              placeholder: field.placeholder,
+              value: formData[field.name],
+              onChange: (e) => handleInputChange(field.name, e.target.value),
+              leftIcon: <field.icon className="w-5 h-5" />,
+              error: validationErrors[field.name],
+              disabled: isLoading,
+              className: "w-full"
+            }
+
+            if (field.hasToggle) {
+              fieldProps.rightIcon = createPasswordToggle(showToggle, getToggleHandler(field))
+            }
+
+            return (
+              <motion.div key={field.name} {...getFormAnimationProps(index)}>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  {field.label} {field.required && <span className="text-red-400">*</span>}
+                </label>
+                <Input {...fieldProps} />
+                
+                {/* Password Strength Indicator */}
+                {field.showStrength && fieldProps.value && (
+                  <div className="mt-2">
+                    <PasswordStrength password={fieldProps.value} />
+                  </div>
+                )}
+              </motion.div>
+            )
+          })}
         </div>
 
         {/* Terms & Conditions */}
@@ -193,7 +180,7 @@ const RegisterPage = () => {
             rightIcon={<UserPlus className="w-5 h-5" />}
             className="w-full"
           >
-            Create Account
+            {REGISTER_CONFIG.SUBMIT_TEXT}
           </Button>
         </motion.div>
 
@@ -217,12 +204,12 @@ const RegisterPage = () => {
           transition={{ delay: 0.6 }}
         >
           <p className="text-gray-400">
-            Already have an account?{' '}
+            {REGISTER_CONFIG.FOOTER_TEXT}{' '}
             <Link
-              to="/login"
+              to={REGISTER_CONFIG.FOOTER_LINK_TO}
               className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
             >
-              Sign in here
+              {REGISTER_CONFIG.FOOTER_LINK_TEXT}
             </Link>
           </p>
         </motion.div>

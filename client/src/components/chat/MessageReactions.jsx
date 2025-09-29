@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Smile } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -7,12 +7,24 @@ import { useMessageReactions } from '@/hooks/useMessages.jsx'
 import { useAuth } from '@/hooks/useAuth.jsx'
 import { EMOJI_REACTIONS } from '@/utils/constants.js'
 
+// Configuration constants
+const REACTION_CONFIG = {
+  MAX_VISIBLE: 6,
+  QUICK_EMOJIS: ['👍', '❤️', '😂', '😮', '😢', '😡'],
+  TOOLTIP_DELAY: 500,
+  CATEGORIES: {
+    'Smileys & Emotion': ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳'],
+    'People & Body': ['👍', '👎', '👊', '✊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👌', '🤏', '👋', '🤚', '🖐️', '✋', '🖖'],
+    'Objects': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️'],
+  }
+}
+
 const MessageReactions = ({
   message,
   conversationId,
   compact = false,
   showAddButton = true,
-  maxReactions = 6,
+  maxReactions = REACTION_CONFIG.MAX_VISIBLE,
   className = '',
   ...props
 }) => {
@@ -23,6 +35,53 @@ const MessageReactions = ({
   const [showAllReactions, setShowAllReactions] = useState(false)
   
   const emojiPickerRef = useRef(null)
+
+  // Memoized grouped reactions
+  const { groupedReactions, reactionEntries, visibleReactions, hiddenCount } = useMemo(() => {
+    const grouped = message.reactions?.reduce((acc, reaction) => {
+      const emoji = reaction.emoji
+      if (!acc[emoji]) {
+        acc[emoji] = {
+          emoji,
+          count: 0,
+          users: [],
+          hasUserReacted: false
+        }
+      }
+      
+      acc[emoji].count++
+      acc[emoji].users.push(reaction.user)
+      
+      if (reaction.user === user?._id) {
+        acc[emoji].hasUserReacted = true
+      }
+      
+      return acc
+    }, {}) || {}
+
+    const entries = Object.entries(grouped)
+    const visible = showAllReactions ? entries : entries.slice(0, maxReactions)
+    const hidden = entries.length - maxReactions
+
+    return {
+      groupedReactions: grouped,
+      reactionEntries: entries,
+      visibleReactions: visible,
+      hiddenCount: hidden
+    }
+  }, [message.reactions, user?._id, showAllReactions, maxReactions])
+
+  // Handle reaction click
+  const handleReactionClick = useCallback(async (emoji) => {
+    if (isProcessing(message._id, emoji)) return
+    await toggleReaction(message._id, emoji)
+  }, [toggleReaction, message._id, isProcessing])
+
+  // Handle add reaction
+  const handleAddReaction = useCallback((emoji) => {
+    setShowEmojiPicker(false)
+    handleReactionClick(emoji)
+  }, [handleReactionClick])
 
   // Close emoji picker on outside click
   useEffect(() => {
@@ -41,48 +100,8 @@ const MessageReactions = ({
     }
   }, [showEmojiPicker])
 
-  if (!message?.reactions?.length && !showAddButton) {
+  if (!reactionEntries.length && !showAddButton) {
     return null
-  }
-
-  // Group reactions by emoji
-  const groupedReactions = message.reactions?.reduce((acc, reaction) => {
-    const emoji = reaction.emoji
-    if (!acc[emoji]) {
-      acc[emoji] = {
-        emoji,
-        count: 0,
-        users: [],
-        hasUserReacted: false
-      }
-    }
-    
-    acc[emoji].count++
-    acc[emoji].users.push(reaction.user)
-    
-    if (reaction.user === user?._id) {
-      acc[emoji].hasUserReacted = true
-    }
-    
-    return acc
-  }, {}) || {}
-
-  const reactionEntries = Object.entries(groupedReactions)
-  const visibleReactions = showAllReactions 
-    ? reactionEntries 
-    : reactionEntries.slice(0, maxReactions)
-  const hiddenCount = reactionEntries.length - maxReactions
-
-  // Handle reaction click
-  const handleReactionClick = async (emoji) => {
-    if (isProcessing(message._id, emoji)) return
-    await toggleReaction(message._id, emoji)
-  }
-
-  // Handle add reaction
-  const handleAddReaction = (emoji) => {
-    setShowEmojiPicker(false)
-    handleReactionClick(emoji)
   }
 
   return (
@@ -103,7 +122,7 @@ const MessageReactions = ({
         ))}
       </AnimatePresence>
 
-      {/* Show More Button */}
+      {/* Show More/Less Buttons */}
       {!showAllReactions && hiddenCount > 0 && (
         <Button
           variant="ghost"
@@ -115,7 +134,6 @@ const MessageReactions = ({
         </Button>
       )}
 
-      {/* Show Less Button */}
       {showAllReactions && hiddenCount > 0 && (
         <Button
           variant="ghost"
@@ -209,14 +227,14 @@ const ReactionButton = ({
   const [showTooltip, setShowTooltip] = useState(false)
 
   // Format users list for tooltip
-  const formatUsers = () => {
+  const formatUsers = useCallback(() => {
     if (users.length === 0) return ''
     if (users.length === 1) return users[0].name || 'Someone'
     if (users.length === 2) return `${users[0].name} and ${users[1].name}`
     if (users.length === 3) return `${users[0].name}, ${users[1].name} and ${users[2].name}`
     
     return `${users[0].name}, ${users[1].name} and ${users.length - 2} others`
-  }
+  }, [users])
 
   return (
     <div className="relative">
@@ -239,17 +257,9 @@ const ReactionButton = ({
         )}
         {...props}
       >
-        <span className={compact ? 'text-sm' : 'text-base'}>
-          {emoji}
-        </span>
-        <span className={clsx(
-          'font-medium',
-          compact ? 'text-xs' : 'text-sm'
-        )}>
-          {count}
-        </span>
+        <span className={compact ? 'text-sm' : 'text-base'}>{emoji}</span>
+        <span className={clsx('font-medium', compact ? 'text-xs' : 'text-sm')}>{count}</span>
         
-        {/* Processing indicator */}
         {isProcessing && (
           <div className={clsx(
             'animate-spin rounded-full border-2 border-transparent border-t-current',
@@ -269,7 +279,6 @@ const ReactionButton = ({
           >
             {formatUsers()} reacted with {emoji}
             
-            {/* Arrow */}
             <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900" />
           </motion.div>
         )}
@@ -279,21 +288,13 @@ const ReactionButton = ({
 }
 
 // Quick reactions bar for hovering over messages
-export const QuickReactions = ({
-  message,
-  conversationId,
-  onReactionSelect,
-  className = '',
-  ...props
-}) => {
+export const QuickReactions = ({ message, conversationId, onReactionSelect, className = '', ...props }) => {
   const { toggleReaction, isProcessing } = useMessageReactions(conversationId)
 
-  const handleQuickReaction = async (emoji) => {
+  const handleQuickReaction = useCallback(async (emoji) => {
     await toggleReaction(message._id, emoji)
     onReactionSelect?.(emoji)
-  }
-
-  const quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡']
+  }, [toggleReaction, message._id, onReactionSelect])
 
   return (
     <motion.div
@@ -301,13 +302,12 @@ export const QuickReactions = ({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
       className={clsx(
-        'flex items-center gap-1 glass rounded-full p-1 border border-gray-600/50',
-        'backdrop-blur-sm',
+        'flex items-center gap-1 glass rounded-full p-1 border border-gray-600/50 backdrop-blur-sm',
         className
       )}
       {...props}
     >
-      {quickEmojis.map((emoji) => (
+      {REACTION_CONFIG.QUICK_EMOJIS.map((emoji) => (
         <button
           key={emoji}
           onClick={() => handleQuickReaction(emoji)}
@@ -321,77 +321,6 @@ export const QuickReactions = ({
           {emoji}
         </button>
       ))}
-    </motion.div>
-  )
-}
-
-// Reaction picker modal for full emoji selection
-export const ReactionPickerModal = ({
-  isOpen,
-  onClose,
-  onReactionSelect,
-  message,
-  conversationId,
-  className = '',
-  ...props
-}) => {
-  const { toggleReaction } = useMessageReactions(conversationId)
-
-  const categories = {
-    'Smileys & Emotion': ['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳'],
-    'People & Body': ['👍', '👎', '👊', '✊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👌', '🤏', '👋', '🤚', '🖐️', '✋', '🖖'],
-    'Objects': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️'],
-  }
-
-  const handleReactionClick = async (emoji) => {
-    await toggleReaction(message._id, emoji)
-    onReactionSelect?.(emoji)
-    onClose?.()
-  }
-
-  if (!isOpen) return null
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-        className={clsx(
-          'glass rounded-xl p-6 max-w-md max-h-96 overflow-y-auto',
-          'border border-gray-600/50',
-          className
-        )}
-        {...props}
-      >
-        <h3 className="text-lg font-semibold text-white mb-4">Add Reaction</h3>
-        
-        <div className="space-y-4">
-          {Object.entries(categories).map(([category, emojis]) => (
-            <div key={category}>
-              <h4 className="text-sm font-medium text-gray-400 mb-2">{category}</h4>
-              <div className="grid grid-cols-8 gap-2">
-                {emojis.map((emoji) => (
-                  <button
-                    key={emoji}
-                    onClick={() => handleReactionClick(emoji)}
-                    className="w-10 h-10 flex items-center justify-center rounded hover:bg-white/10 transition-colors text-lg"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </motion.div>
     </motion.div>
   )
 }

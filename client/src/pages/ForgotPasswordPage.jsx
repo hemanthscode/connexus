@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mail, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react'
@@ -9,83 +9,100 @@ import authService from '@/services/authService.js'
 import { validateData, authValidation } from '@/utils/validators.js'
 import { useToast } from '@/components/ui/Toast.jsx'
 
+// Configuration constants
+const FORGOT_PASSWORD_CONFIG = {
+  FORM_TITLE: 'Forgot password?',
+  FORM_SUBTITLE: 'No worries, we\'ll send you reset instructions',
+  SUCCESS_TITLE: 'Check your email',
+  SUCCESS_SUBTITLE: 'We sent a password reset link to your email',
+  RESET_LINK_EXPIRY: '15 minutes'
+}
+
 const ForgotPasswordPage = () => {
-  const [email, setEmail] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [isSuccess, setIsSuccess] = useState(false)
-  const [error, setError] = useState('')
-  const [validationError, setValidationError] = useState('')
+  const [state, setState] = useState({
+    email: '',
+    isLoading: false,
+    isSuccess: false,
+    error: '',
+    validationError: ''
+  })
   
   const toast = useToast()
 
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault()
-    
-    // Clear previous errors
-    setError('')
-    setValidationError('')
-    
-    // Validate email
-    const validation = validateData(authValidation.forgotPassword, { email })
-    if (!validation.isValid) {
-      setValidationError(validation.errors.email)
-      return
-    }
-    
-    setIsLoading(true)
-    
-    try {
-      const result = await authService.forgotPassword({ email })
-      
-      if (result.success) {
-        setIsSuccess(true)
-        toast.success('Password reset email sent successfully')
-      } else {
-        setError(result.error || 'Failed to send reset email')
-        toast.error(result.error || 'Failed to send reset email')
-      }
-    } catch (error) {
-      console.error('Forgot password error:', error)
-      const errorMessage = 'An error occurred. Please try again.'
-      setError(errorMessage)
-      toast.error(errorMessage)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [email, toast])
+  // Memoized layout props
+  const layoutProps = useMemo(() => ({
+    title: state.isSuccess ? FORGOT_PASSWORD_CONFIG.SUCCESS_TITLE : FORGOT_PASSWORD_CONFIG.FORM_TITLE,
+    subtitle: state.isSuccess ? FORGOT_PASSWORD_CONFIG.SUCCESS_SUBTITLE : FORGOT_PASSWORD_CONFIG.FORM_SUBTITLE
+  }), [state.isSuccess])
 
-  const handleTryAgain = useCallback(() => {
-    setIsSuccess(false)
-    setEmail('')
-    setError('')
-    setValidationError('')
-  }, [])
+  // Handlers with useCallback
+  const handlers = useMemo(() => ({
+    handleSubmit: async (e) => {
+      e.preventDefault()
+      
+      // Clear previous errors
+      setState(prev => ({ ...prev, error: '', validationError: '' }))
+      
+      // Validate email
+      const validation = validateData(authValidation.forgotPassword, { email: state.email })
+      if (!validation.isValid) {
+        setState(prev => ({ ...prev, validationError: validation.errors.email }))
+        return
+      }
+      
+      setState(prev => ({ ...prev, isLoading: true }))
+      
+      try {
+        const result = await authService.forgotPassword({ email: state.email })
+        
+        if (result.success) {
+          setState(prev => ({ ...prev, isSuccess: true }))
+          toast.success('Password reset email sent successfully')
+        } else {
+          const errorMessage = result.error || 'Failed to send reset email'
+          setState(prev => ({ ...prev, error: errorMessage }))
+          toast.error(errorMessage)
+        }
+      } catch (error) {
+        console.error('Forgot password error:', error)
+        const errorMessage = 'An error occurred. Please try again.'
+        setState(prev => ({ ...prev, error: errorMessage }))
+        toast.error(errorMessage)
+      } finally {
+        setState(prev => ({ ...prev, isLoading: false }))
+      }
+    },
+
+    handleTryAgain: () => {
+      setState({
+        email: '',
+        isLoading: false,
+        isSuccess: false,
+        error: '',
+        validationError: ''
+      })
+    },
+
+    handleEmailChange: (value) => {
+      setState(prev => ({ ...prev, email: value }))
+    }
+  }), [state.email, toast])
 
   return (
-    <AuthLayout
-      title={isSuccess ? 'Check your email' : 'Forgot password?'}
-      subtitle={
-        isSuccess 
-          ? 'We sent a password reset link to your email'
-          : 'No worries, we\'ll send you reset instructions'
-      }
-    >
+    <AuthLayout {...layoutProps}>
       <AnimatePresence mode="wait">
-        {isSuccess ? (
+        {state.isSuccess ? (
           <SuccessView 
             key="success"
-            email={email}
-            onTryAgain={handleTryAgain}
+            email={state.email}
+            onTryAgain={handlers.handleTryAgain}
           />
         ) : (
           <ResetForm
             key="form"
-            email={email}
-            setEmail={setEmail}
-            onSubmit={handleSubmit}
-            isLoading={isLoading}
-            error={error}
-            validationError={validationError}
+            {...state}
+            onSubmit={handlers.handleSubmit}
+            onEmailChange={handlers.handleEmailChange}
           />
         )}
       </AnimatePresence>
@@ -94,14 +111,7 @@ const ForgotPasswordPage = () => {
 }
 
 // Reset form component
-const ResetForm = ({
-  email,
-  setEmail,
-  onSubmit,
-  isLoading,
-  error,
-  validationError
-}) => {
+const ResetForm = ({ email, isLoading, error, validationError, onSubmit, onEmailChange }) => {
   return (
     <motion.form
       initial={{ opacity: 0, x: 20 }}
@@ -130,7 +140,7 @@ const ResetForm = ({
           type="email"
           placeholder="Enter your email address"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => onEmailChange(e.target.value)}
           leftIcon={<Mail className="w-5 h-5" />}
           error={validationError}
           disabled={isLoading}
@@ -204,15 +214,13 @@ const SuccessView = ({ email, onTryAgain }) => {
         transition={{ delay: 0.3 }}
         className="space-y-4"
       >
-        <p className="text-gray-300">
-          We've sent a password reset link to:
-        </p>
+        <p className="text-gray-300">We've sent a password reset link to:</p>
         <p className="text-lg font-medium text-white bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-600/50">
           {email}
         </p>
         <p className="text-sm text-gray-400">
           Check your email and follow the instructions to reset your password. 
-          The link will expire in 15 minutes.
+          The link will expire in {FORGOT_PASSWORD_CONFIG.RESET_LINK_EXPIRY}.
         </p>
       </motion.div>
 
@@ -223,12 +231,7 @@ const SuccessView = ({ email, onTryAgain }) => {
         transition={{ delay: 0.4 }}
         className="space-y-4"
       >
-        <Button
-          onClick={onTryAgain}
-          variant="secondary"
-          size="lg"
-          className="w-full"
-        >
+        <Button onClick={onTryAgain} variant="secondary" size="lg" className="w-full">
           Send to Different Email
         </Button>
         

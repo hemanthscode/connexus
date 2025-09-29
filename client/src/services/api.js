@@ -1,9 +1,9 @@
 import axios from 'axios'
-import { API_CONFIG, STORAGE_KEYS, ERROR_MESSAGES } from '@/utils/constants.js'
+import { API_CONFIG, STORAGE_KEYS } from '@/utils/constants.js'
 import { parseErrorMessage, retryWithBackoff } from '@/utils/helpers.js'
 import { decryptLocalStorageData } from '@/utils/encryption.js'
 
-// Create axios instance with base configuration
+// Create axios instance
 const api = axios.create({
   baseURL: API_CONFIG.BASE_URL,
   timeout: API_CONFIG.TIMEOUT,
@@ -15,18 +15,13 @@ const api = axios.create({
 // Token management
 let authToken = null
 
-/**
- * Get auth token from localStorage or memory
- * @returns {string|null} Auth token
- */
 const getAuthToken = () => {
   if (authToken) return authToken
   
   try {
     const encryptedToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN)
     if (encryptedToken) {
-      const decryptedToken = decryptLocalStorageData(encryptedToken)
-      authToken = decryptedToken
+      authToken = decryptLocalStorageData(encryptedToken)
       return authToken
     }
   } catch (error) {
@@ -36,22 +31,14 @@ const getAuthToken = () => {
   return null
 }
 
-/**
- * Set auth token in memory and localStorage
- * @param {string} token - Auth token
- */
 export const setAuthToken = (token) => {
   authToken = token
-  if (token) {
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-  } else {
+  api.defaults.headers.common['Authorization'] = token ? `Bearer ${token}` : undefined
+  if (!token) {
     delete api.defaults.headers.common['Authorization']
   }
 }
 
-/**
- * Clear auth token from memory and localStorage
- */
 export const clearAuthToken = () => {
   authToken = null
   delete api.defaults.headers.common['Authorization']
@@ -59,7 +46,7 @@ export const clearAuthToken = () => {
   localStorage.removeItem(STORAGE_KEYS.USER_DATA)
 }
 
-// Request interceptor - Add auth token to requests
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = getAuthToken()
@@ -67,9 +54,9 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     
-    // Log API requests in development
+    // Debug logging
     if (import.meta.env.VITE_SHOW_API_LOGS === 'true') {
-      console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`, {
+      console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, {
         data: config.data,
         params: config.params,
       })
@@ -77,21 +64,15 @@ api.interceptors.request.use(
     
     return config
   },
-  (error) => {
-    console.error('Request interceptor error:', error)
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
-// Response interceptor - Handle responses and errors
+// Response interceptor
 api.interceptors.response.use(
   (response) => {
-    // Log API responses in development
+    // Debug logging
     if (import.meta.env.VITE_SHOW_API_LOGS === 'true') {
-      console.log(`✅ API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, {
-        status: response.status,
-        data: response.data,
-      })
+      console.log(`✅ ${response.status} ${response.config.method?.toUpperCase()} ${response.config.url}`)
     }
     
     return response
@@ -99,23 +80,17 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
     
-    // Log API errors in development
+    // Debug logging
     if (import.meta.env.VITE_SHOW_API_LOGS === 'true') {
-      console.error(`❌ API Error: ${originalRequest?.method?.toUpperCase()} ${originalRequest?.url}`, {
-        status: error.response?.status,
-        message: error.response?.data?.message || error.message,
-        data: error.response?.data,
-      })
+      console.error(`❌ ${error.response?.status} ${originalRequest?.method?.toUpperCase()} ${originalRequest?.url}`, 
+        error.response?.data?.message || error.message)
     }
     
-    // Handle 401 Unauthorized - token expired or invalid
+    // Handle 401 Unauthorized
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
-      
-      // Clear invalid token
       clearAuthToken()
       
-      // Redirect to login (you can customize this logic)
       if (window.location.pathname !== '/login') {
         window.location.href = '/login'
       }
@@ -123,7 +98,7 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
     
-    // Handle network errors with retry
+    // Retry network errors
     if (!error.response && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true
       
@@ -144,72 +119,36 @@ api.interceptors.response.use(
 
 // API helper functions
 export const apiHelpers = {
-  /**
-   * Handle API errors consistently
-   * @param {any} error - Error object
-   * @returns {object} Formatted error
-   */
-  handleError: (error) => {
-    const message = parseErrorMessage(error)
-    const status = error.response?.status || 0
-    
-    return {
-      message,
-      status,
-      isNetworkError: !error.response,
-      isServerError: status >= 500,
-      isClientError: status >= 400 && status < 500,
-      originalError: error,
-    }
-  },
+  handleError: (error) => ({
+    message: parseErrorMessage(error),
+    status: error.response?.status || 0,
+    isNetworkError: !error.response,
+    isServerError: (error.response?.status || 0) >= 500,
+    isClientError: (error.response?.status || 0) >= 400 && (error.response?.status || 0) < 500,
+    originalError: error,
+  }),
   
-  /**
-   * Format success response
-   * @param {object} response - Axios response
-   * @returns {object} Formatted response
-   */
-  handleSuccess: (response) => {
-    return {
-      data: response.data.data || response.data,
-      message: response.data.message || 'Success',
-      status: response.status,
-      success: response.data.success !== false,
-    }
-  },
+  handleSuccess: (response) => ({
+    data: response.data.data || response.data,
+    message: response.data.message || 'Success',
+    status: response.status,
+    success: response.data.success !== false,
+  }),
   
-  /**
-   * Create request config with pagination
-   * @param {number} page - Page number
-   * @param {number} limit - Items per page
-   * @param {object} additionalParams - Additional query params
-   * @returns {object} Request config
-   */
-  createPaginationConfig: (page = 1, limit = 50, additionalParams = {}) => {
-    return {
-      params: {
-        page,
-        limit,
-        ...additionalParams,
-      },
-    }
-  },
+  createPaginationConfig: (page = 1, limit = 50, additionalParams = {}) => ({
+    params: { page, limit, ...additionalParams },
+  }),
   
-  /**
-   * Create multipart form data for file uploads
-   * @param {object} data - Form data object
-   * @returns {FormData} FormData object
-   */
   createFormData: (data) => {
     const formData = new FormData()
     
-    Object.keys(data).forEach(key => {
-      const value = data[key]
+    Object.entries(data).forEach(([key, value]) => {
       if (value instanceof File) {
         formData.append(key, value)
       } else if (Array.isArray(value)) {
         value.forEach(item => formData.append(key, item))
       } else if (value !== null && value !== undefined) {
-        formData.append(key, JSON.stringify(value))
+        formData.append(key, typeof value === 'object' ? JSON.stringify(value) : value)
       }
     })
     
@@ -217,5 +156,4 @@ export const apiHelpers = {
   },
 }
 
-// Export configured axios instance
 export default api

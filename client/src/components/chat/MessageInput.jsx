@@ -1,15 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Send, 
-  Paperclip, 
-  Smile, 
-  X, 
-  Image, 
-  File, 
-  Mic,
-  MicOff,
-  Square
+  Send, Paperclip, Smile, X, Image, File, Mic, MicOff, Square
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import Button from '../ui/Button.jsx'
@@ -21,12 +13,27 @@ import { useToast } from '../ui/Toast.jsx'
 import { EMOJI_REACTIONS, UI_CONFIG } from '@/utils/constants.js'
 import { formatFileSize, getFileExtension } from '@/utils/helpers.js'
 
+// Configuration constants
+const INPUT_CONFIG = {
+  MIN_HEIGHT: '48px',
+  MAX_HEIGHT: '120px',
+  MAX_FILES: 10,
+  PLACEHOLDER_DEFAULT: 'Type a message...',
+  PLACEHOLDER_DISABLED: 'Cannot send messages'
+}
+
+const RECORDING_CONFIG = {
+  MAX_DURATION: 300, // 5 minutes
+  UPDATE_INTERVAL: 1000,
+  AUDIO_FORMAT: 'audio/wav'
+}
+
 const MessageInput = ({
   conversationId,
   replyToMessage = null,
   onCancelReply = null,
   disabled = false,
-  placeholder = 'Type a message...',
+  placeholder = INPUT_CONFIG.PLACEHOLDER_DEFAULT,
   className = '',
   ...props
 }) => {
@@ -52,14 +59,28 @@ const MessageInput = ({
   const recordingTimerRef = useRef(null)
   const emojiPickerRef = useRef(null)
 
-  // Focus textarea on mount
+  // FIXED: Memoized state calculations - removed self-reference
+  const inputState = useMemo(() => {
+    const hasContent = message.trim() || attachments.length > 0
+    const isUploadingAny = uploadingFiles.length > 0
+    const recordingTime = `${Math.floor(recordingDuration / 60)}:${(recordingDuration % 60).toString().padStart(2, '0')}`
+    
+    return {
+      canSend: hasContent && !disabled && !sending,
+      hasContent,
+      isUploadingAny,
+      canRecord: !disabled && !hasContent && !isRecording, // FIXED: Calculate hasContent inline
+      recordingTime
+    }
+  }, [message, attachments.length, disabled, sending, uploadingFiles.length, isRecording, recordingDuration])
+
+  // Auto-resize and focus management
   useEffect(() => {
     if (textareaRef.current && !disabled) {
       textareaRef.current.focus()
     }
   }, [disabled])
 
-  // Handle textarea auto-resize
   useEffect(() => {
     const textarea = textareaRef.current
     if (textarea) {
@@ -68,218 +89,208 @@ const MessageInput = ({
     }
   }, [message])
 
-  // Handle typing indicators
-  const handleInputChange = useCallback((value) => {
-    setMessage(value)
-    
-    if (value.trim() && !disabled) {
-      startTyping()
-    } else {
-      stopTyping()
-    }
-  }, [startTyping, stopTyping, disabled])
-
-  // Handle key press
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
-    }
-  }, [])
-
-  // Send message
-  const handleSendMessage = useCallback(async () => {
-    if (disabled || sending) return
-
-    const trimmedMessage = message.trim()
-    if (!trimmedMessage && attachments.length === 0) return
-
-    const messageData = {
-      content: trimmedMessage,
-      type: 'text',
-      replyTo: replyToMessage?._id || null,
-      attachments: attachments.map(att => ({
-        url: att.url,
-        type: att.type,
-        name: att.name,
-        size: att.size
-      }))
-    }
-
-    try {
-      const result = await sendMessage(messageData)
-      
-      if (result.success) {
-        setMessage('')
-        setAttachments([])
+  // Handlers with memoization
+  const handlers = useMemo(() => ({
+    handleInputChange: (value) => {
+      setMessage(value)
+      if (value.trim() && !disabled) {
+        startTyping()
+      } else {
         stopTyping()
-        onCancelReply?.()
-        
-        // Focus back to textarea
-        setTimeout(() => {
-          textareaRef.current?.focus()
-        }, 100)
       }
-    } catch (error) {
-      console.error('Failed to send message:', error)
-    }
-  }, [message, attachments, replyToMessage, sendMessage, stopTyping, onCancelReply, disabled, sending])
+    },
 
-  // Handle file selection
-  const handleFileSelect = useCallback(async (files) => {
-    const fileArray = Array.from(files)
-    
-    // Validate files
-    const validFiles = []
-    for (const file of fileArray) {
-      if (file.size > UI_CONFIG.MAX_FILE_SIZE) {
-        toast.error(`File "${file.name}" is too large. Maximum size is ${formatFileSize(UI_CONFIG.MAX_FILE_SIZE)}`)
-        continue
+    handleKeyDown: (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        handlers.handleSendMessage()
+      }
+    },
+
+    handleSendMessage: async () => {
+      if (disabled || sending || !inputState.canSend) return
+
+      const trimmedMessage = message.trim()
+      if (!trimmedMessage && attachments.length === 0) return
+
+      const messageData = {
+        content: trimmedMessage,
+        type: 'text',
+        replyTo: replyToMessage?._id || null,
+        attachments: attachments.map(att => ({
+          url: att.url,
+          type: att.type,
+          name: att.name,
+          size: att.size
+        }))
+      }
+
+      try {
+        const result = await sendMessage(messageData)
+        
+        if (result.success) {
+          setMessage('')
+          setAttachments([])
+          stopTyping()
+          onCancelReply?.()
+          
+          setTimeout(() => textareaRef.current?.focus(), 100)
+        }
+      } catch (error) {
+        console.error('Failed to send message:', error)
+      }
+    },
+
+    handleEmojiSelect: (emoji) => {
+      const textarea = textareaRef.current
+      if (textarea) {
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const newMessage = message.slice(0, start) + emoji + message.slice(end)
+        
+        setMessage(newMessage)
+        
+        setTimeout(() => {
+          textarea.selectionStart = textarea.selectionEnd = start + emoji.length
+          textarea.focus()
+        }, 0)
       }
       
-      validFiles.push(file)
+      setShowEmojiPicker(false)
     }
+  }), [message, attachments, replyToMessage, sendMessage, stopTyping, onCancelReply, disabled, sending, inputState.canSend, startTyping])
 
-    if (validFiles.length === 0) return
-
-    // Upload files
-    setUploadingFiles(prev => [...prev, ...validFiles.map(f => ({ file: f, progress: 0 }))])
-
-    try {
-      const uploadPromises = validFiles.map(async (file) => {
-        const result = await uploadService.uploadAttachment(
-          file,
-          conversationId,
-          (progress) => {
-            setUploadingFiles(prev => prev.map(item => 
-              item.file === file ? { ...item, progress } : item
-            ))
-          }
-        )
-
-        if (result.success) {
-          return {
-            url: result.data.url,
-            type: file.type.startsWith('image/') ? 'image' : 'file',
-            name: file.name,
-            size: file.size,
-            extension: getFileExtension(file.name)
-          }
+  // File handling
+  const fileHandlers = useMemo(() => ({
+    handleFileSelect: async (files) => {
+      const fileArray = Array.from(files)
+      
+      // Validate files
+      const validFiles = fileArray.filter(file => {
+        if (file.size > UI_CONFIG.MAX_FILE_SIZE) {
+          toast.error(`File "${file.name}" is too large. Maximum size is ${formatFileSize(UI_CONFIG.MAX_FILE_SIZE)}`)
+          return false
         }
-        
-        throw new Error(result.error || 'Upload failed')
+        return true
       })
 
-      const uploadedFiles = await Promise.all(uploadPromises)
-      
-      setAttachments(prev => [...prev, ...uploadedFiles])
-      toast.success(`${uploadedFiles.length} file(s) uploaded successfully`)
-      
-    } catch (error) {
-      console.error('File upload failed:', error)
-      toast.error('Failed to upload some files')
-    } finally {
-      setUploadingFiles([])
-    }
-  }, [conversationId, toast])
+      if (validFiles.length === 0) return
 
-  // Remove attachment
-  const removeAttachment = useCallback((index) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index))
-  }, [])
+      // Upload files
+      setUploadingFiles(prev => [...prev, ...validFiles.map(f => ({ file: f, progress: 0 }))])
 
-  // Handle emoji selection
-  const handleEmojiSelect = useCallback((emoji) => {
-    const textarea = textareaRef.current
-    if (textarea) {
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const newMessage = message.slice(0, start) + emoji + message.slice(end)
-      
-      setMessage(newMessage)
-      
-      // Restore cursor position
-      setTimeout(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + emoji.length
-        textarea.focus()
-      }, 0)
-    }
-    
-    setShowEmojiPicker(false)
-  }, [message])
+      try {
+        const uploadPromises = validFiles.map(async (file) => {
+          const result = await uploadService.uploadAttachment(
+            file,
+            conversationId,
+            (progress) => {
+              setUploadingFiles(prev => prev.map(item => 
+                item.file === file ? { ...item, progress } : item
+              ))
+            }
+          )
 
-  // Start voice recording
-  const startRecording = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
-      
-      mediaRecorderRef.current = mediaRecorder
-      setIsRecording(true)
-      setRecordingDuration(0)
-      
-      // Start recording timer
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1)
-      }, 1000)
-      
-      const audioChunks = []
-      
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunks.push(event.data)
-      }
-      
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' })
-        const audioFile = new File([audioBlob], `voice-message-${Date.now()}.wav`, {
-          type: 'audio/wav'
+          if (result.success) {
+            return {
+              url: result.data.url,
+              type: file.type.startsWith('image/') ? 'image' : 'file',
+              name: file.name,
+              size: file.size,
+              extension: getFileExtension(file.name)
+            }
+          }
+          
+          throw new Error(result.error || 'Upload failed')
         })
+
+        const uploadedFiles = await Promise.all(uploadPromises)
         
-        await handleFileSelect([audioFile])
+        setAttachments(prev => [...prev, ...uploadedFiles])
+        toast.success(`${uploadedFiles.length} file(s) uploaded successfully`)
         
-        // Cleanup
-        stream.getTracks().forEach(track => track.stop())
+      } catch (error) {
+        console.error('File upload failed:', error)
+        toast.error('Failed to upload some files')
+      } finally {
+        setUploadingFiles([])
+      }
+    },
+
+    removeAttachment: (index) => {
+      setAttachments(prev => prev.filter((_, i) => i !== index))
+    }
+  }), [conversationId, toast])
+
+  // Voice recording handlers
+  const recordingHandlers = useMemo(() => ({
+    startRecording: async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const mediaRecorder = new MediaRecorder(stream)
+        
+        mediaRecorderRef.current = mediaRecorder
+        setIsRecording(true)
+        setRecordingDuration(0)
+        
+        recordingTimerRef.current = setInterval(() => {
+          setRecordingDuration(prev => prev + 1)
+        }, RECORDING_CONFIG.UPDATE_INTERVAL)
+        
+        const audioChunks = []
+        
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunks.push(event.data)
+        }
+        
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: RECORDING_CONFIG.AUDIO_FORMAT })
+          const audioFile = new File([audioBlob], `voice-message-${Date.now()}.wav`, {
+            type: RECORDING_CONFIG.AUDIO_FORMAT
+          })
+          
+          await fileHandlers.handleFileSelect([audioFile])
+          stream.getTracks().forEach(track => track.stop())
+        }
+        
+        mediaRecorder.start()
+      } catch (error) {
+        console.error('Failed to start recording:', error)
+        toast.error('Failed to access microphone')
+      }
+    },
+
+    stopRecording: () => {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop()
+        mediaRecorderRef.current = null
       }
       
-      mediaRecorder.start()
-    } catch (error) {
-      console.error('Failed to start recording:', error)
-      toast.error('Failed to access microphone')
-    }
-  }, [handleFileSelect, toast])
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+        recordingTimerRef.current = null
+      }
+      
+      setIsRecording(false)
+      setRecordingDuration(0)
+    },
 
-  // Stop recording
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current = null
+    cancelRecording: () => {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current = null
+      }
+      
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+        recordingTimerRef.current = null
+      }
+      
+      setIsRecording(false)
+      setRecordingDuration(0)
     }
-    
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current)
-      recordingTimerRef.current = null
-    }
-    
-    setIsRecording(false)
-    setRecordingDuration(0)
-  }, [])
+  }), [fileHandlers.handleFileSelect, toast])
 
-  // Cancel recording
-  const cancelRecording = useCallback(() => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current = null
-    }
-    
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current)
-      recordingTimerRef.current = null
-    }
-    
-    setIsRecording(false)
-    setRecordingDuration(0)
-  }, [])
-
-  // Close emoji picker on outside click
+  // Event handlers for outside clicks
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
@@ -296,7 +307,7 @@ const MessageInput = ({
     }
   }, [showEmojiPicker])
 
-  // Cleanup on unmount
+  // Cleanup
   useEffect(() => {
     return () => {
       stopTyping()
@@ -306,8 +317,39 @@ const MessageInput = ({
     }
   }, [stopTyping])
 
-  const canSend = (message.trim() || attachments.length > 0) && !disabled && !sending
-  const hasContent = message.trim() || attachments.length > 0
+  // Render attachment preview
+  const renderAttachmentPreview = (attachment, index) => (
+    <div key={index} className="flex items-center gap-2 bg-gray-700 rounded-lg p-2 max-w-xs">
+      {attachment.type === 'image' ? (
+        <Image className="w-4 h-4 text-green-400" />
+      ) : (
+        <File className="w-4 h-4 text-blue-400" />
+      )}
+      <span className="text-sm text-gray-300 truncate flex-1">{attachment.name}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => fileHandlers.removeAttachment(index)}
+        className="w-5 h-5"
+      >
+        <X className="w-3 h-3" />
+      </Button>
+    </div>
+  )
+
+  const renderUploadProgress = (item, index) => (
+    <div key={index} className="flex items-center gap-3">
+      <File className="w-4 h-4 text-gray-400" />
+      <span className="text-sm text-gray-300 flex-1 truncate">{item.file.name}</span>
+      <div className="w-24 h-2 bg-gray-600 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-cyan-400 transition-all duration-300"
+          style={{ width: `${item.progress}%` }}
+        />
+      </div>
+      <span className="text-xs text-gray-400 w-8">{item.progress}%</span>
+    </div>
+  )
 
   return (
     <div className={clsx('flex flex-col', className)} {...props}>
@@ -325,16 +367,9 @@ const MessageInput = ({
                 <p className="text-xs text-cyan-400 font-medium mb-1">
                   Replying to {replyToMessage.sender.name || 'Unknown'}
                 </p>
-                <p className="text-sm text-gray-300 truncate">
-                  {replyToMessage.content}
-                </p>
+                <p className="text-sm text-gray-300 truncate">{replyToMessage.content}</p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onCancelReply}
-                className="ml-2 w-6 h-6"
-              >
+              <Button variant="ghost" size="icon" onClick={onCancelReply} className="ml-2 w-6 h-6">
                 <X className="w-4 h-4" />
               </Button>
             </div>
@@ -352,29 +387,7 @@ const MessageInput = ({
             className="px-4 py-2 bg-gray-800/30"
           >
             <div className="flex flex-wrap gap-2">
-              {attachments.map((attachment, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 bg-gray-700 rounded-lg p-2 max-w-xs"
-                >
-                  {attachment.type === 'image' ? (
-                    <Image className="w-4 h-4 text-green-400" />
-                  ) : (
-                    <File className="w-4 h-4 text-blue-400" />
-                  )}
-                  <span className="text-sm text-gray-300 truncate flex-1">
-                    {attachment.name}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeAttachment(index)}
-                    className="w-5 h-5"
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-              ))}
+              {attachments.map(renderAttachmentPreview)}
             </div>
           </motion.div>
         )}
@@ -382,7 +395,7 @@ const MessageInput = ({
 
       {/* Uploading Files */}
       <AnimatePresence>
-        {uploadingFiles.length > 0 && (
+        {inputState.isUploadingAny && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -390,23 +403,7 @@ const MessageInput = ({
             className="px-4 py-2 bg-gray-800/30"
           >
             <div className="space-y-2">
-              {uploadingFiles.map((item, index) => (
-                <div key={index} className="flex items-center gap-3">
-                  <File className="w-4 h-4 text-gray-400" />
-                  <span className="text-sm text-gray-300 flex-1 truncate">
-                    {item.file.name}
-                  </span>
-                  <div className="w-24 h-2 bg-gray-600 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-cyan-400 transition-all duration-300"
-                      style={{ width: `${item.progress}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-400 w-8">
-                    {item.progress}%
-                  </span>
-                </div>
-              ))}
+              {uploadingFiles.map(renderUploadProgress)}
             </div>
           </motion.div>
         )}
@@ -419,7 +416,7 @@ const MessageInput = ({
           <Button
             variant="ghost"
             size="icon"
-            disabled={disabled || uploadingFiles.length > 0}
+            disabled={disabled || inputState.isUploadingAny}
             onClick={() => fileInputRef.current?.click()}
             className="w-10 h-10"
           >
@@ -431,7 +428,7 @@ const MessageInput = ({
             type="file"
             multiple
             className="hidden"
-            onChange={(e) => handleFileSelect(e.target.files)}
+            onChange={(e) => fileHandlers.handleFileSelect(e.target.files)}
             accept={UI_CONFIG.ALLOWED_FILE_TYPES}
           />
         </div>
@@ -441,9 +438,9 @@ const MessageInput = ({
           <textarea
             ref={textareaRef}
             value={message}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={disabled ? 'Cannot send messages' : placeholder}
+            onChange={(e) => handlers.handleInputChange(e.target.value)}
+            onKeyDown={handlers.handleKeyDown}
+            placeholder={disabled ? INPUT_CONFIG.PLACEHOLDER_DISABLED : placeholder}
             disabled={disabled}
             className={clsx(
               'w-full resize-none rounded-lg px-4 py-3 pr-12',
@@ -452,7 +449,7 @@ const MessageInput = ({
               'disabled:opacity-50 disabled:cursor-not-allowed',
               'transition-all duration-200'
             )}
-            style={{ minHeight: '48px', maxHeight: '120px' }}
+            style={{ minHeight: INPUT_CONFIG.MIN_HEIGHT, maxHeight: INPUT_CONFIG.MAX_HEIGHT }}
           />
           
           {/* Emoji Button */}
@@ -482,7 +479,7 @@ const MessageInput = ({
                   {EMOJI_REACTIONS.map((emoji) => (
                     <button
                       key={emoji}
-                      onClick={() => handleEmojiSelect(emoji)}
+                      onClick={() => handlers.handleEmojiSelect(emoji)}
                       className="w-8 h-8 flex items-center justify-center rounded hover:bg-white/10 transition-colors"
                     >
                       {emoji}
@@ -494,15 +491,15 @@ const MessageInput = ({
           </AnimatePresence>
         </div>
 
-        {/* Voice/Send Button */}
+        {/* Action Buttons */}
         <div className="flex gap-2">
           {/* Voice Recording */}
-          {!hasContent && !isRecording && (
+          {!inputState.hasContent && !isRecording && (
             <Button
               variant="ghost"
               size="icon"
               disabled={disabled}
-              onClick={startRecording}
+              onClick={recordingHandlers.startRecording}
               className="w-10 h-10"
             >
               <Mic className="w-5 h-5" />
@@ -514,15 +511,13 @@ const MessageInput = ({
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 text-red-400">
                 <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse" />
-                <span className="text-sm font-mono">
-                  {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                </span>
+                <span className="text-sm font-mono">{inputState.recordingTime}</span>
               </div>
               
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={cancelRecording}
+                onClick={recordingHandlers.cancelRecording}
                 className="w-8 h-8 text-gray-400"
               >
                 <X className="w-4 h-4" />
@@ -531,7 +526,7 @@ const MessageInput = ({
               <Button
                 variant="primary"
                 size="icon"
-                onClick={stopRecording}
+                onClick={recordingHandlers.stopRecording}
                 className="w-10 h-10"
               >
                 <Square className="w-4 h-4" />
@@ -540,12 +535,12 @@ const MessageInput = ({
           )}
 
           {/* Send Button */}
-          {hasContent && !isRecording && (
+          {inputState.hasContent && !isRecording && (
             <Button
               variant="primary"
               size="icon"
-              disabled={!canSend}
-              onClick={handleSendMessage}
+              disabled={!inputState.canSend}
+              onClick={handlers.handleSendMessage}
               loading={sending}
               className="w-10 h-10"
             >
@@ -568,9 +563,7 @@ const MessageInput = ({
               <div className="flex items-center justify-center gap-3 text-red-400">
                 <MicOff className="w-4 h-4 animate-pulse" />
                 <span className="text-sm font-medium">Recording voice message...</span>
-                <span className="text-sm font-mono">
-                  {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                </span>
+                <span className="text-sm font-mono">{inputState.recordingTime}</span>
               </div>
             </div>
           </motion.div>

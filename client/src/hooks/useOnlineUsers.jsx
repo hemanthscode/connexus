@@ -4,38 +4,53 @@ import { useAuth } from './useAuth.jsx'
 import { formatLastSeen } from '@/utils/formatters.js'
 import { DEBUG } from '@/utils/constants.js'
 
-/**
- * Hook for tracking and managing online users
- */
-export const useOnlineUsers = (options = {}) => {
-  const {
-    includeCurrentUser = false,
-    sortBy = 'status', // 'status', 'name', 'lastSeen'
-    filterBy = null, // function to filter users
-    groupBy = null, // 'status' to group by online/offline
-  } = options
+// Configuration constants
+const STATUS_CONFIG = {
+  ORDER: { online: 0, away: 1, offline: 2 },
+  ICONS: { online: '🟢', away: '🟡', offline: '⚫', default: '❓' },
+  COLORS: { 
+    online: 'text-green-400', 
+    away: 'text-yellow-400', 
+    offline: 'text-gray-400', 
+    default: 'text-gray-500' 
+  },
+  UPDATE_INTERVAL: 30000
+}
 
+const DEFAULT_OPTIONS = {
+  includeCurrentUser: false,
+  sortBy: 'status', // 'status', 'name', 'lastSeen'
+  filterBy: null,
+  groupBy: null, // 'status' to group by online/offline
+}
+
+// Helper functions
+const getStatusIcon = (status) => STATUS_CONFIG.ICONS[status] || STATUS_CONFIG.ICONS.default
+const getStatusColor = (status) => STATUS_CONFIG.COLORS[status] || STATUS_CONFIG.COLORS.default
+
+export const useOnlineUsers = (options = {}) => {
+  const config = { ...DEFAULT_OPTIONS, ...options }
   const { onlineUsers, getUserOnlineStatus, isConnected } = useSocket()
   const { user: currentUser } = useAuth()
   
   const [userDetails, setUserDetails] = useState(new Map())
   const [lastUpdate, setLastUpdate] = useState(Date.now())
 
-  // Process and filter online users
+  // Process and enhance users with memoization
   const processedUsers = useMemo(() => {
     let users = [...onlineUsers]
 
-    // Filter out current user if not included
-    if (!includeCurrentUser && currentUser) {
+    // Filter current user if needed
+    if (!config.includeCurrentUser && currentUser) {
       users = users.filter(user => user.userId !== currentUser._id)
     }
 
     // Apply custom filter
-    if (filterBy && typeof filterBy === 'function') {
-      users = users.filter(filterBy)
+    if (config.filterBy && typeof config.filterBy === 'function') {
+      users = users.filter(config.filterBy)
     }
 
-    // Enhance with additional details
+    // Enhance with details and metadata
     users = users.map(user => {
       const details = userDetails.get(user.userId)
       return {
@@ -52,7 +67,7 @@ export const useOnlineUsers = (options = {}) => {
 
     // Sort users
     users.sort((a, b) => {
-      switch (sortBy) {
+      switch (config.sortBy) {
         case 'name':
           return (a.name || '').localeCompare(b.name || '')
         case 'lastSeen':
@@ -62,57 +77,80 @@ export const useOnlineUsers = (options = {}) => {
           return new Date(b.lastSeen) - new Date(a.lastSeen)
         case 'status':
         default:
-          // Online first, then away, then offline
-          const statusOrder = { online: 0, away: 1, offline: 2 }
-          const aOrder = statusOrder[a.status] || 3
-          const bOrder = statusOrder[b.status] || 3
+          const aOrder = STATUS_CONFIG.ORDER[a.status] || 3
+          const bOrder = STATUS_CONFIG.ORDER[b.status] || 3
           
-          if (aOrder !== bOrder) return aOrder - bOrder
-          
-          // Secondary sort by name
-          return (a.name || '').localeCompare(b.name || '')
+          return aOrder !== bOrder 
+            ? aOrder - bOrder 
+            : (a.name || '').localeCompare(b.name || '')
       }
     })
 
     return users
-  }, [onlineUsers, currentUser, includeCurrentUser, filterBy, sortBy, userDetails])
+  }, [onlineUsers, currentUser, config, userDetails])
 
   // Group users by status if requested
   const groupedUsers = useMemo(() => {
-    if (groupBy !== 'status') return null
+    if (config.groupBy !== 'status') return null
 
     return processedUsers.reduce((groups, user) => {
       const status = user.status
-      if (!groups[status]) {
-        groups[status] = []
-      }
+      if (!groups[status]) groups[status] = []
       groups[status].push(user)
       return groups
     }, {})
-  }, [processedUsers, groupBy])
+  }, [processedUsers, config.groupBy])
 
-  // Update user details (from API or cache)
-  const updateUserDetails = useCallback((userId, details) => {
-    setUserDetails(prev => {
-      const updated = new Map(prev)
-      updated.set(userId, { ...updated.get(userId), ...details })
-      return updated
-    })
-    setLastUpdate(Date.now())
-  }, [])
+  // Memoized utility functions
+  const utilities = useMemo(() => ({
+    updateUserDetails: (userId, details) => {
+      setUserDetails(prev => {
+        const updated = new Map(prev)
+        updated.set(userId, { ...updated.get(userId), ...details })
+        return updated
+      })
+      setLastUpdate(Date.now())
+    },
 
-  // Get user details by ID
-  const getUserDetails = useCallback((userId) => {
-    return userDetails.get(userId) || null
-  }, [userDetails])
+    getUserDetails: (userId) => userDetails.get(userId) || null,
 
-  // Check if user is online
-  const isUserOnline = useCallback((userId) => {
-    return getUserOnlineStatus(userId) === 'online'
-  }, [getUserOnlineStatus])
+    isUserOnline: (userId) => getUserOnlineStatus(userId) === 'online',
 
-  // Get online users count by status
-  const getStatusCounts = useCallback(() => {
+    searchUsers: (query) => {
+      if (!query || query.length < 2) return processedUsers
+      
+      const lowercaseQuery = query.toLowerCase()
+      return processedUsers.filter(user => 
+        (user.name || '').toLowerCase().includes(lowercaseQuery) ||
+        (user.email || '').toLowerCase().includes(lowercaseQuery)
+      )
+    },
+
+    getUsersByConversation: (conversationId, participants = []) => {
+      return participants
+        .map(participant => {
+          const userId = typeof participant === 'string' ? participant : participant.user?._id || participant.userId
+          const onlineUser = processedUsers.find(u => u.userId === userId)
+          
+          return {
+            ...participant,
+            userId,
+            status: onlineUser?.status || 'offline',
+            isOnline: onlineUser?.status === 'online',
+            lastSeen: onlineUser?.lastSeen,
+            lastSeenFormatted: onlineUser?.lastSeenFormatted
+          }
+        })
+        .sort((a, b) => {
+          if (a.isOnline && !b.isOnline) return -1
+          if (!a.isOnline && b.isOnline) return 1
+          return 0
+        })
+    },
+  }), [userDetails, getUserOnlineStatus, processedUsers])
+
+  // Status counts with memoization
+  const statusCounts = useMemo(() => {
     return processedUsers.reduce((counts, user) => {
       counts[user.status] = (counts[user.status] || 0) + 1
       counts.total = (counts.total || 0) + 1
@@ -120,50 +158,13 @@ export const useOnlineUsers = (options = {}) => {
     }, {})
   }, [processedUsers])
 
-  // Get users by conversation
-  const getUsersByConversation = useCallback((conversationId, participants = []) => {
-    const conversationUsers = participants
-      .map(participant => {
-        const userId = typeof participant === 'string' ? participant : participant.user?._id || participant.userId
-        const onlineUser = processedUsers.find(u => u.userId === userId)
-        
-        return {
-          ...participant,
-          userId,
-          status: onlineUser?.status || 'offline',
-          isOnline: onlineUser?.status === 'online',
-          lastSeen: onlineUser?.lastSeen,
-          lastSeenFormatted: onlineUser?.lastSeenFormatted
-        }
-      })
-      .sort((a, b) => {
-        // Online users first
-        if (a.isOnline && !b.isOnline) return -1
-        if (!a.isOnline && b.isOnline) return 1
-        return 0
-      })
-
-    return conversationUsers
-  }, [processedUsers])
-
-  // Search users
-  const searchUsers = useCallback((query) => {
-    if (!query || query.length < 2) return processedUsers
-
-    const lowercaseQuery = query.toLowerCase()
-    return processedUsers.filter(user => 
-      (user.name || '').toLowerCase().includes(lowercaseQuery) ||
-      (user.email || '').toLowerCase().includes(lowercaseQuery)
-    )
-  }, [processedUsers])
-
-  // Auto-refresh user data periodically
+  // Auto-refresh user data
   useEffect(() => {
     if (!isConnected) return
 
     const interval = setInterval(() => {
       setLastUpdate(Date.now())
-    }, 30000) // Update every 30 seconds
+    }, STATUS_CONFIG.UPDATE_INTERVAL)
 
     return () => clearInterval(interval)
   }, [isConnected])
@@ -190,15 +191,11 @@ export const useOnlineUsers = (options = {}) => {
     onlineCount: processedUsers.filter(u => u.status === 'online').length,
     awayCount: processedUsers.filter(u => u.status === 'away').length,
     offlineCount: processedUsers.filter(u => u.status === 'offline').length,
-    statusCounts: getStatusCounts(),
+    statusCounts,
     
-    // Utility functions
-    updateUserDetails,
-    getUserDetails,
-    isUserOnline,
-    getUsersByConversation,
-    searchUsers,
-    getUserOnlineStatus, // FIXED: Added missing function
+    // Utilities
+    ...utilities,
+    getUserOnlineStatus,
     
     // State
     isConnected,
@@ -206,124 +203,78 @@ export const useOnlineUsers = (options = {}) => {
   }
 }
 
-// ... (rest of the hooks remain the same)
-
-/**
- * Hook for tracking specific user's online status
- */
+// Specific user status hook
 export const useUserOnlineStatus = (userId) => {
   const { getUserOnlineStatus, onlineUsers } = useSocket()
-  const [status, setStatus] = useState('offline')
-  const [lastSeen, setLastSeen] = useState(null)
-
-  useEffect(() => {
-    if (!userId) return
-
-    const userStatus = getUserOnlineStatus(userId)
+  
+  const userStatus = useMemo(() => {
+    if (!userId) return { status: 'offline', lastSeen: null }
+    
+    const status = getUserOnlineStatus(userId)
     const userInfo = onlineUsers.find(u => u.userId === userId)
     
-    setStatus(userStatus)
-    setLastSeen(userInfo?.lastSeen || null)
+    return {
+      status,
+      lastSeen: userInfo?.lastSeen || null,
+      isOnline: status === 'online',
+      isAway: status === 'away',
+      isOffline: status === 'offline',
+      lastSeenFormatted: userInfo?.lastSeen ? formatLastSeen(userInfo.lastSeen) : null,
+      statusIcon: getStatusIcon(status),
+      statusColor: getStatusColor(status),
+    }
   }, [userId, getUserOnlineStatus, onlineUsers])
 
-  return {
-    status,
-    lastSeen,
-    isOnline: status === 'online',
-    isAway: status === 'away',
-    isOffline: status === 'offline',
-    lastSeenFormatted: lastSeen ? formatLastSeen(lastSeen) : null,
-    statusIcon: getStatusIcon(status),
-    statusColor: getStatusColor(status),
-  }
+  return userStatus
 }
 
-/**
- * Hook for managing user presence in conversations
- */
+// Conversation presence hook
 export const useConversationPresence = (conversationId, participants = []) => {
   const { users, getUsersByConversation } = useOnlineUsers()
-  const [conversationUsers, setConversationUsers] = useState([])
-
-  useEffect(() => {
-    if (!conversationId || !participants.length) {
-      setConversationUsers([])
-      return
-    }
-
-    const updatedUsers = getUsersByConversation(conversationId, participants)
-    setConversationUsers(updatedUsers)
+  
+  const conversationUsers = useMemo(() => {
+    if (!conversationId || !participants.length) return []
+    return getUsersByConversation(conversationId, participants)
   }, [conversationId, participants, users, getUsersByConversation])
 
-  const onlineParticipants = conversationUsers.filter(u => u.isOnline)
-  const awayParticipants = conversationUsers.filter(u => u.status === 'away')
-  const offlineParticipants = conversationUsers.filter(u => u.status === 'offline')
+  const presenceData = useMemo(() => {
+    const online = conversationUsers.filter(u => u.isOnline)
+    const away = conversationUsers.filter(u => u.status === 'away')
+    const offline = conversationUsers.filter(u => u.status === 'offline')
 
-  return {
-    participants: conversationUsers,
-    onlineParticipants,
-    awayParticipants,
-    offlineParticipants,
-    onlineCount: onlineParticipants.length,
-    totalCount: conversationUsers.length,
-    hasOnlineUsers: onlineParticipants.length > 0,
-  }
+    return {
+      participants: conversationUsers,
+      onlineParticipants: online,
+      awayParticipants: away,
+      offlineParticipants: offline,
+      onlineCount: online.length,
+      totalCount: conversationUsers.length,
+      hasOnlineUsers: online.length > 0,
+    }
+  }, [conversationUsers])
+
+  return presenceData
 }
 
-/**
- * Hook for bulk user operations
- */
+// Bulk operations hook
 export const useBulkUserOperations = () => {
   const { users, updateUserDetails } = useOnlineUsers()
 
-  const bulkUpdateUsers = useCallback(async (userUpdates) => {
-    const promises = userUpdates.map(({ userId, details }) => 
-      updateUserDetails(userId, details)
-    )
-    
-    await Promise.all(promises)
-  }, [updateUserDetails])
+  const operations = useMemo(() => ({
+    bulkUpdateUsers: async (userUpdates) => {
+      const promises = userUpdates.map(({ userId, details }) => 
+        updateUserDetails(userId, details)
+      )
+      await Promise.all(promises)
+    },
 
-  const getUsersById = useCallback((userIds) => {
-    return users.filter(user => userIds.includes(user.userId))
-  }, [users])
-
-  const getUsersByStatus = useCallback((status) => {
-    return users.filter(user => user.status === status)
-  }, [users])
+    getUsersById: (userIds) => users.filter(user => userIds.includes(user.userId)),
+    getUsersByStatus: (status) => users.filter(user => user.status === status),
+  }), [users, updateUserDetails])
 
   return {
-    bulkUpdateUsers,
-    getUsersById,
-    getUsersByStatus,
+    ...operations,
     allUsers: users
-  }
-}
-
-// Helper functions
-const getStatusIcon = (status) => {
-  switch (status) {
-    case 'online':
-      return '🟢'
-    case 'away':
-      return '🟡'
-    case 'offline':
-      return '⚫'
-    default:
-      return '❓'
-  }
-}
-
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'online':
-      return 'text-green-400'
-    case 'away':
-      return 'text-yellow-400'
-    case 'offline':
-      return 'text-gray-400'
-    default:
-      return 'text-gray-500'
   }
 }
 

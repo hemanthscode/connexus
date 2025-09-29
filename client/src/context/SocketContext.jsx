@@ -1,13 +1,11 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useAuth } from '@/hooks/useAuth.jsx'
 import socketService from '@/services/socketService.js'
 import { SOCKET_EVENTS, DEBUG } from '@/utils/constants.js'
 import { useToast } from '@/components/ui/Toast.jsx'
 
-// Create context
 const SocketContext = createContext(null)
 
-// Custom hook to use socket context
 export const useSocketContext = () => {
   const context = useContext(SocketContext)
   if (!context) {
@@ -16,161 +14,153 @@ export const useSocketContext = () => {
   return context
 }
 
-// Socket provider component
 export const SocketProvider = ({ children }) => {
-  const { isAuthenticated, user, setUserStatus } = useAuth()
+  // FIXED: Get token from useAuth hook
+  const { isAuthenticated, user, token } = useAuth()
   const toast = useToast()
-  
+
   // Connection state
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [connectionError, setConnectionError] = useState(null)
   const [reconnectAttempts, setReconnectAttempts] = useState(0)
-  
+
   // User presence
   const [onlineUsers, setOnlineUsers] = useState(new Map())
   const [typingUsers, setTypingUsers] = useState(new Map())
-  
-  // Event listeners
+
+  // Refs for cleanup
   const eventListeners = useRef(new Map())
   const reconnectTimer = useRef(null)
   const typingTimers = useRef(new Map())
 
-  // Initialize socket connection
+  // FIXED: Connection management with token validation
   const connect = useCallback(async () => {
-    if (!isAuthenticated || isConnecting || isConnected) return
+    // FIXED: Check for both authentication and token
+    if (!isAuthenticated || !token || isConnecting || isConnected) {
+      if (DEBUG.SOCKET_LOGS && !token) {
+        console.log('Socket connection skipped: No auth token available')
+      }
+      return
+    }
 
     setIsConnecting(true)
     setConnectionError(null)
 
     try {
-      await socketService.initializeSocket()
-      
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Socket connected successfully')
-      }
+      // FIXED: Pass the auth token to socket service
+      await socketService.initializeSocket(token)
+      if (DEBUG.SOCKET_LOGS) console.log('Socket connected with token')
     } catch (error) {
       console.error('Socket connection failed:', error)
       setConnectionError(error.message)
-      
-      // Attempt reconnection with exponential backoff
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
-      
-      reconnectTimer.current = setTimeout(() => {
-        setReconnectAttempts(prev => prev + 1)
-        connect()
-      }, delay)
-    }
-  }, [isAuthenticated, isConnecting, isConnected, reconnectAttempts])
 
-  // Disconnect socket
+      // Only retry if we still have a valid token
+      if (token && reconnectAttempts < 5) {
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
+        reconnectTimer.current = setTimeout(() => {
+          setReconnectAttempts(prev => prev + 1)
+          connect()
+        }, delay)
+      }
+    }
+  }, [isAuthenticated, token, isConnecting, isConnected, reconnectAttempts])
+
   const disconnect = useCallback(() => {
     if (reconnectTimer.current) {
       clearTimeout(reconnectTimer.current)
       reconnectTimer.current = null
     }
-    
-    // Clear typing timers
+
     typingTimers.current.forEach(timer => clearTimeout(timer))
     typingTimers.current.clear()
-    
-    // Clean up socket
+
     socketService.cleanup()
     socketService.disconnect()
-    
+
     setIsConnected(false)
     setIsConnecting(false)
     setReconnectAttempts(0)
     setOnlineUsers(new Map())
     setTypingUsers(new Map())
-    
-    if (DEBUG.SOCKET_LOGS) {
-      console.log('Socket disconnected and cleaned up')
-    }
   }, [])
 
-  // Handle connection events
+  // FIXED: Socket event handlers with token dependency
   useEffect(() => {
-    if (!isAuthenticated) {
+    // FIXED: Disconnect if no auth or token
+    if (!isAuthenticated || !token) {
+      if (DEBUG.SOCKET_LOGS) {
+        console.log('Disconnecting socket: Authentication lost')
+      }
       disconnect()
       return
     }
 
-    // Connection successful
     const handleConnect = () => {
       setIsConnected(true)
       setIsConnecting(false)
       setConnectionError(null)
       setReconnectAttempts(0)
-      
-      // Update user status to online
+
       if (user) {
-        setUserStatus('online')
         socketService.updateUserStatus('online')
-      }
-      
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Socket connected')
       }
     }
 
-    // Connection lost
     const handleDisconnect = (reason) => {
       setIsConnected(false)
       setIsConnecting(false)
-      
+
       if (DEBUG.SOCKET_LOGS) {
         console.log('Socket disconnected:', reason)
       }
-      
-      // Don't auto-reconnect for manual disconnects
-      if (reason !== 'io client disconnect' && reason !== 'io server disconnect') {
-        // Attempt reconnection
+
+      // Auto-reconnect for unexpected disconnects (but only if we have auth)
+      if (reason !== 'io client disconnect' && reason !== 'io server disconnect' && token) {
         setTimeout(() => {
-          if (isAuthenticated) {
-            connect()
-          }
+          if (isAuthenticated && token) connect()
         }, 2000)
       }
     }
 
-    // Handle connection errors
     const handleConnectError = (error) => {
       setIsConnecting(false)
       setConnectionError(error.message)
-      
-      console.error('Socket connection error:', error)
-      
-      if (reconnectAttempts < 5) {
+
+      // FIXED: Only retry if we have a valid token and haven't exceeded max attempts
+      if (token && reconnectAttempts < 5) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
-        
         reconnectTimer.current = setTimeout(() => {
           setReconnectAttempts(prev => prev + 1)
           connect()
         }, delay)
       } else {
-        toast.error('Failed to connect to chat server')
+        if (reconnectAttempts >= 5) {
+          toast.error('Failed to connect to chat server after multiple attempts')
+        } else if (!token) {
+          console.warn('Cannot reconnect: No auth token available')
+        }
       }
     }
 
-    // Handle reconnection
     const handleReconnect = () => {
       setIsConnected(true)
       setIsConnecting(false)
       setConnectionError(null)
       setReconnectAttempts(0)
-      
       toast.success('Reconnected to chat server')
     }
 
-    // Register event listeners
+    // Register connection events
     socketService.on(SOCKET_EVENTS.CONNECT, handleConnect)
     socketService.on(SOCKET_EVENTS.DISCONNECT, handleDisconnect)
     socketService.on('connect_error', handleConnectError)
     socketService.on(SOCKET_EVENTS.RECONNECT, handleReconnect)
 
-    // Initial connection attempt
-    connect()
+    // FIXED: Only attempt connection if we have a token
+    if (token) {
+      connect()
+    }
 
     return () => {
       socketService.off(SOCKET_EVENTS.CONNECT, handleConnect)
@@ -178,77 +168,33 @@ export const SocketProvider = ({ children }) => {
       socketService.off('connect_error', handleConnectError)
       socketService.off(SOCKET_EVENTS.RECONNECT, handleReconnect)
     }
-  }, [isAuthenticated, connect, disconnect, reconnectAttempts, user, setUserStatus, toast])
+  }, [isAuthenticated, user, token, connect, disconnect, reconnectAttempts, toast])
 
-  // Handle user presence events
+  // User presence events
   useEffect(() => {
     if (!isConnected) return
 
-    // User came online
-    const handleUserOnline = ({ userId, lastSeen }) => {
+    const updateUserPresence = (userId, status, lastSeen = null) => {
       setOnlineUsers(prev => {
         const updated = new Map(prev)
-        updated.set(userId, {
-          userId,
-          status: 'online',
-          lastSeen: null
-        })
+        updated.set(userId, { userId, status, lastSeen })
         return updated
       })
-      
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('User came online:', userId)
-      }
     }
 
-    // User went offline
-    const handleUserOffline = ({ userId, lastSeen }) => {
-      setOnlineUsers(prev => {
-        const updated = new Map(prev)
-        updated.set(userId, {
-          userId,
-          status: 'offline',
-          lastSeen
-        })
-        return updated
-      })
-      
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('User went offline:', userId)
-      }
-    }
-
-    // Current online users
+    const handleUserOnline = ({ userId }) => updateUserPresence(userId, 'online')
+    const handleUserOffline = ({ userId, lastSeen }) => updateUserPresence(userId, 'offline', lastSeen)
+    const handleUserStatusUpdated = ({ userId, status, lastSeen }) => updateUserPresence(userId, status, lastSeen)
+    
     const handleCurrentOnlineUsers = (users) => {
       const userMap = new Map()
       users.forEach(user => {
-        userMap.set(user.userId, {
-          userId: user.userId,
-          status: 'online',
-          lastSeen: null
-        })
+        userMap.set(user.userId, { userId: user.userId, status: 'online', lastSeen: null })
       })
       setOnlineUsers(userMap)
-      
-      if (DEBUG.SOCKET_LOGS) {
-        console.log('Current online users:', users.length)
-      }
     }
 
-    // User status updated
-    const handleUserStatusUpdated = ({ userId, status, lastSeen }) => {
-      setOnlineUsers(prev => {
-        const updated = new Map(prev)
-        updated.set(userId, {
-          userId,
-          status,
-          lastSeen: status === 'offline' ? lastSeen : null
-        })
-        return updated
-      })
-    }
-
-    // Register presence event listeners
+    // Register presence events
     socketService.on(SOCKET_EVENTS.USER_ONLINE, handleUserOnline)
     socketService.on(SOCKET_EVENTS.USER_OFFLINE, handleUserOffline)
     socketService.on(SOCKET_EVENTS.CURRENT_ONLINE_USERS, handleCurrentOnlineUsers)
@@ -262,72 +208,55 @@ export const SocketProvider = ({ children }) => {
     }
   }, [isConnected])
 
-  // Handle typing events
+  // Typing events
   useEffect(() => {
     if (!isConnected) return
 
-    // User started typing
     const handleUserTyping = ({ userId, user, conversationId }) => {
       setTypingUsers(prev => {
         const updated = new Map(prev)
         const conversationTyping = updated.get(conversationId) || new Map()
-        
-        conversationTyping.set(userId, {
-          userId,
-          user,
-          timestamp: Date.now()
-        })
-        
+        conversationTyping.set(userId, { userId, user, timestamp: Date.now() })
         updated.set(conversationId, conversationTyping)
         return updated
       })
 
-      // Clear typing after timeout
-      const timerId = setTimeout(() => {
-        setTypingUsers(prev => {
-          const updated = new Map(prev)
-          const conversationTyping = updated.get(conversationId)
-          
-          if (conversationTyping) {
-            conversationTyping.delete(userId)
-            if (conversationTyping.size === 0) {
-              updated.delete(conversationId)
-            } else {
-              updated.set(conversationId, conversationTyping)
-            }
-          }
-          
-          return updated
-        })
-      }, 3000)
-
-      // Store timer for cleanup
+      // Auto-clear typing after 3 seconds
       const timerKey = `${conversationId}-${userId}`
       if (typingTimers.current.has(timerKey)) {
         clearTimeout(typingTimers.current.get(timerKey))
       }
+      
+      const timerId = setTimeout(() => {
+        setTypingUsers(prev => {
+          const updated = new Map(prev)
+          const conversationTyping = updated.get(conversationId)
+          if (conversationTyping) {
+            conversationTyping.delete(userId)
+            if (conversationTyping.size === 0) {
+              updated.delete(conversationId)
+            }
+          }
+          return updated
+        })
+      }, 3000)
+      
       typingTimers.current.set(timerKey, timerId)
     }
 
-    // User stopped typing
     const handleUserStopTyping = ({ userId, conversationId }) => {
       setTypingUsers(prev => {
         const updated = new Map(prev)
         const conversationTyping = updated.get(conversationId)
-        
         if (conversationTyping) {
           conversationTyping.delete(userId)
           if (conversationTyping.size === 0) {
             updated.delete(conversationId)
-          } else {
-            updated.set(conversationId, conversationTyping)
           }
         }
-        
         return updated
       })
 
-      // Clear timer
       const timerKey = `${conversationId}-${userId}`
       if (typingTimers.current.has(timerKey)) {
         clearTimeout(typingTimers.current.get(timerKey))
@@ -335,7 +264,6 @@ export const SocketProvider = ({ children }) => {
       }
     }
 
-    // Register typing event listeners
     socketService.on(SOCKET_EVENTS.USER_TYPING, handleUserTyping)
     socketService.on(SOCKET_EVENTS.USER_STOP_TYPING, handleUserStopTyping)
 
@@ -345,49 +273,32 @@ export const SocketProvider = ({ children }) => {
     }
   }, [isConnected])
 
-  // Handle page visibility for status updates
+  // Status management based on page visibility
   useEffect(() => {
     if (!isConnected || !user) return
 
     const handleVisibilityChange = () => {
       const status = document.hidden ? 'away' : 'online'
-      setUserStatus(status)
       socketService.updateUserStatus(status)
     }
 
+    const handleBeforeUnload = () => {
+      if (user) socketService.updateUserStatus('offline')
+    }
+
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [isConnected, user, setUserStatus])
-
-  // Handle page unload
-  useEffect(() => {
-    if (!isConnected) return
-
-    const handleBeforeUnload = () => {
-      if (user) {
-        setUserStatus('offline')
-        socketService.updateUserStatus('offline')
-      }
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    
-    return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [isConnected, user, setUserStatus])
+  }, [isConnected, user])
 
   // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnect()
-    }
-  }, [disconnect])
+  useEffect(() => () => disconnect(), [disconnect])
 
-  // Utility functions
+  // Event management utilities
   const addEventListener = useCallback((event, callback) => {
     if (!eventListeners.current.has(event)) {
       eventListeners.current.set(event, new Set())
@@ -397,9 +308,7 @@ export const SocketProvider = ({ children }) => {
   }, [])
 
   const removeEventListener = useCallback((event, callback) => {
-    if (eventListeners.current.has(event)) {
-      eventListeners.current.get(event).delete(callback)
-    }
+    eventListeners.current.get(event)?.delete(callback)
     socketService.off(event, callback)
   }, [])
 
@@ -407,11 +316,19 @@ export const SocketProvider = ({ children }) => {
     if (isConnected) {
       socketService.emit(event, data)
     } else {
-      console.warn('Socket not connected, cannot emit event:', event)
+      console.warn('Socket not connected, cannot emit:', event)
     }
   }, [isConnected])
 
-  // Get connection status
+  // Utility functions
+  const getUserOnlineStatus = useCallback((userId) => {
+    return onlineUsers.get(userId)?.status || 'offline'
+  }, [onlineUsers])
+
+  const getTypingUsers = useCallback((conversationId) => {
+    return Array.from(typingUsers.get(conversationId)?.values() || [])
+  }, [typingUsers])
+
   const getConnectionStatus = useCallback(() => {
     if (connectionError) return 'error'
     if (isConnecting) return 'connecting'
@@ -419,19 +336,8 @@ export const SocketProvider = ({ children }) => {
     return 'disconnected'
   }, [isConnected, isConnecting, connectionError])
 
-  // Get user online status
-  const getUserOnlineStatus = useCallback((userId) => {
-    const userStatus = onlineUsers.get(userId)
-    return userStatus?.status || 'offline'
-  }, [onlineUsers])
-
-  // Get typing users for conversation
-  const getTypingUsers = useCallback((conversationId) => {
-    return Array.from(typingUsers.get(conversationId)?.values() || [])
-  }, [typingUsers])
-
-  // Context value
-  const contextValue = {
+  // FIXED: Memoized context value with token dependency
+  const contextValue = useMemo(() => ({
     // Connection state
     isConnected,
     isConnecting,
@@ -442,36 +348,29 @@ export const SocketProvider = ({ children }) => {
     // User presence
     onlineUsers: Array.from(onlineUsers.values()),
     typingUsers,
-    
+
     // Connection control
     connect,
     disconnect,
-    
+
     // Event handling
     addEventListener,
     removeEventListener,
     emit,
-    
+
     // Utility functions
     getUserOnlineStatus,
     getTypingUsers,
-    
-    // Socket service methods
-    joinConversation: socketService.joinConversation,
-    leaveConversation: socketService.leaveConversation,
-    emitTypingStart: socketService.emitTypingStart,
-    emitTypingStop: socketService.emitTypingStop,
-    sendMessage: socketService.sendMessage,
-    editMessage: socketService.editMessage,
-    deleteMessage: socketService.deleteMessage,
-    addReaction: socketService.addReaction,
-    removeReaction: socketService.removeReaction,
-    markMessagesRead: socketService.markMessagesRead,
-    updateUserStatus: socketService.updateUserStatus,
-    joinGroup: socketService.joinGroup,
-    leaveGroup: socketService.leaveGroup,
-    requestConversationInfo: socketService.requestConversationInfo,
-  }
+
+    // Socket service methods (direct pass-through)
+    joinConversation: (conversationId) => isConnected && socketService.joinConversation?.(conversationId),
+    leaveConversation: (conversationId) => isConnected && socketService.leaveConversation?.(conversationId),
+    updateUserStatus: (status) => isConnected && socketService.updateUserStatus?.(status),
+  }), [
+    isConnected, isConnecting, connectionError, reconnectAttempts,
+    onlineUsers, typingUsers, connect, disconnect, addEventListener,
+    removeEventListener, emit, getUserOnlineStatus, getTypingUsers, getConnectionStatus
+  ])
 
   return (
     <SocketContext.Provider value={contextValue}>
@@ -480,8 +379,4 @@ export const SocketProvider = ({ children }) => {
   )
 }
 
-// Export context for direct access if needed
-export { SocketContext }
-
-// Default export
 export default SocketProvider

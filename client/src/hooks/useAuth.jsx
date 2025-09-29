@@ -1,17 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useAuthStore, useAuthActions, useAuthComputed } from '@/store/authSlice.js'
+import { useCallback, useEffect, useState, useMemo } from 'react'
+import useAuthStore from '@/store/authSlice.js'
 import { useNavigate } from 'react-router-dom'
 import { validateData, authValidation } from '@/utils/validators.js'
 import { useToast } from '@/components/ui/Toast.jsx'
 
-// Main auth hook
+// Main auth hook - simplified and optimized
 export const useAuth = () => {
   const authStore = useAuthStore()
-  const authActions = useAuthActions()
-  const authComputed = useAuthComputed()
-
-  return {
-    // State
+  
+  return useMemo(() => ({
+    // Core state
     user: authStore.user,
     isAuthenticated: authStore.isAuthenticated,
     isLoading: authStore.isLoading,
@@ -27,111 +25,50 @@ export const useAuth = () => {
     loginError: authStore.loginError,
     registerError: authStore.registerError,
     
-    // Actions
-    ...authActions,
+    // Session info
+    lastLoginAt: authStore.lastLoginAt,
+    sessionExpiry: authStore.sessionExpiry,
+    rememberMe: authStore.rememberMe,
+    autoLogin: authStore.autoLogin,
     
-    // Computed
-    ...authComputed,
-  }
+    // Actions - direct store methods
+    login: authStore.login,
+    register: authStore.register,
+    logout: authStore.logout,
+    changePassword: authStore.changePassword,
+    updateProfile: authStore.updateProfile,
+    clearError: authStore.clearError,
+    setUserStatus: authStore.setUserStatus,
+    updateAvatar: authStore.updateAvatar,
+    refreshUser: authStore.refreshUser,
+    toggleRememberMe: authStore.toggleRememberMe,
+    setAutoLogin: authStore.setAutoLogin,
+    
+    // Computed values
+    getUserDisplayName: authStore.getUserDisplayName,
+    getUserInitials: authStore.getUserInitials,
+    hasRole: authStore.hasRole,
+    isSessionExpired: authStore.isSessionExpired,
+    getSessionTimeRemaining: authStore.getSessionTimeRemaining,
+    isUserOnline: authStore.isUserOnline,
+  }), [authStore])
 }
 
-// Login hook
-export const useLogin = () => {
+// Generic form hook for auth forms
+const useAuthForm = (initialData, validationSchema, submitAction, successMessage, successRedirect) => {
   const navigate = useNavigate()
   const toast = useToast()
-  const { login, clearError, loginError, isLoggingIn } = useAuth()
+  const { clearError } = useAuth()
   
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    rememberMe: false
-  })
-  
-  const [validationErrors, setValidationErrors] = useState({})
-  const [showPassword, setShowPassword] = useState(false)
-
-  // Clear errors when component mounts (only once)
-  useEffect(() => {
-    clearError('loginError')
-  }, []) // Empty dependency array - only run once
-
-  const handleInputChange = useCallback((field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    
-    // Clear field validation error
-    if (validationErrors[field]) {
-      setValidationErrors(prev => ({ ...prev, [field]: null }))
-    }
-  }, [validationErrors])
-
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault()
-    
-    // Validate form data
-    const validation = validateData(authValidation.login, formData)
-    
-    if (!validation.isValid) {
-      setValidationErrors(validation.errors)
-      return
-    }
-    
-    setValidationErrors({})
-    
-    try {
-      const result = await login(validation.data)
-      
-      if (result.success) {
-        toast.success('Login successful!')
-        navigate('/chat')
-      }
-    } catch (error) {
-      console.error('Login error:', error)
-    }
-  }, [formData, login, navigate, toast])
-
-  const togglePasswordVisibility = useCallback(() => {
-    setShowPassword(prev => !prev)
-  }, [])
-
-  const clearErrorCallback = useCallback(() => {
-    clearError('loginError')
-    setValidationErrors({})
-  }, [clearError])
-
-  return {
-    formData,
-    validationErrors,
-    isLoading: isLoggingIn,
-    error: loginError,
-    showPassword,
-    handleInputChange,
-    handleSubmit,
-    togglePasswordVisibility,
-    clearError: clearErrorCallback, // Use wrapped version
-  }
-}
-
-// Register hook
-export const useRegister = () => {
-  const navigate = useNavigate()
-  const toast = useToast()
-  const { register, clearError, registerError, isRegistering } = useAuth()
-  
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
-  })
-  
+  const [formData, setFormData] = useState(initialData)
   const [validationErrors, setValidationErrors] = useState({})
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
-  // Clear errors when component mounts (only once)
+  // Clear errors on mount
   useEffect(() => {
-    clearError('registerError')
-  }, []) // Empty dependency array - only run once
+    clearError()
+  }, [clearError])
 
   const handleInputChange = useCallback((field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -146,7 +83,7 @@ export const useRegister = () => {
     e.preventDefault()
     
     // Validate form data
-    const validation = validateData(authValidation.register, formData)
+    const validation = validateData(validationSchema, formData)
     
     if (!validation.isValid) {
       setValidationErrors(validation.errors)
@@ -156,18 +93,21 @@ export const useRegister = () => {
     setValidationErrors({})
     
     try {
-      const result = await register(validation.data)
+      const result = await submitAction(validation.data)
       
       if (result.success) {
-        toast.success('Registration successful!')
-        navigate('/welcome')
+        toast.success(successMessage)
+        if (successRedirect) navigate(successRedirect)
       }
+      
+      return result
     } catch (error) {
-      console.error('Registration error:', error)
+      console.error('Form submission error:', error)
+      return { success: false, error: error.message }
     }
-  }, [formData, register, navigate, toast])
+  }, [formData, validationSchema, submitAction, toast, successMessage, successRedirect, navigate])
 
-  const togglePasswordVisibility = useCallback((field) => {
+  const togglePasswordVisibility = useCallback((field = 'password') => {
     if (field === 'password') {
       setShowPassword(prev => !prev)
     } else if (field === 'confirmPassword') {
@@ -175,50 +115,88 @@ export const useRegister = () => {
     }
   }, [])
 
-  const clearErrorCallback = useCallback(() => {
-    clearError('registerError')
+  const clearFormErrors = useCallback(() => {
+    clearError()
     setValidationErrors({})
   }, [clearError])
 
   return {
     formData,
     validationErrors,
-    isLoading: isRegistering,
-    error: registerError,
     showPassword,
     showConfirmPassword,
     handleInputChange,
     handleSubmit,
     togglePasswordVisibility,
-    clearError: clearErrorCallback, // Use wrapped version
+    clearError: clearFormErrors,
   }
 }
 
-// Profile update hook
+// Login hook using generic form hook
+export const useLogin = () => {
+  const { login, isLoggingIn, loginError } = useAuth()
+  
+  const formHook = useAuthForm(
+    { email: '', password: '', rememberMe: false },
+    authValidation.login,
+    login,
+    'Welcome back!',
+    '/chat'
+  )
+
+  return {
+    ...formHook,
+    isLoading: isLoggingIn,
+    error: loginError,
+  }
+}
+
+// Register hook using generic form hook  
+export const useRegister = () => {
+  const { register, isRegistering, registerError } = useAuth()
+  
+  const formHook = useAuthForm(
+    { name: '', email: '', password: '', confirmPassword: '' },
+    authValidation.register,
+    register,
+    'Account created successfully!',
+    '/welcome'
+  )
+
+  return {
+    ...formHook,
+    isLoading: isRegistering,
+    error: registerError,
+  }
+}
+
+// Profile update hook - simplified
 export const useProfileUpdate = () => {
   const { user, updateProfile, isLoading } = useAuth()
   
   const [formData, setFormData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    bio: user?.bio || '',
-    location: user?.location || '',
-    avatar: user?.avatar || null
+    name: '',
+    email: '',
+    bio: '',
+    location: '',
+    avatar: null
   })
   
   const [validationErrors, setValidationErrors] = useState({})
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Update form data when user changes
+  // Initialize form data when user changes
   useEffect(() => {
     if (user) {
-      setFormData({
+      const userData = {
         name: user.name || '',
         email: user.email || '',
         bio: user.bio || '',
         location: user.location || '',
         avatar: user.avatar || null
-      })
+      }
+      setFormData(userData)
+      setHasChanges(false)
     }
   }, [user])
 
@@ -226,52 +204,48 @@ export const useProfileUpdate = () => {
     setFormData(prev => {
       const newData = { ...prev, [field]: value }
       
-      // Check if there are changes
-      const originalData = {
-        name: user?.name || '',
-        email: user?.email || '',
-        bio: user?.bio || '',
-        location: user?.location || '',
-        avatar: user?.avatar || null
+      // Check for changes
+      if (user) {
+        const originalData = {
+          name: user.name || '',
+          email: user.email || '',
+          bio: user.bio || '',
+          location: user.location || '',
+          avatar: user.avatar || null
+        }
+        
+        const changed = Object.keys(newData).some(key => newData[key] !== originalData[key])
+        setHasChanges(changed)
       }
-      
-      const changed = Object.keys(newData).some(key => newData[key] !== originalData[key])
-      setHasChanges(changed)
       
       return newData
     })
     
-    // Clear field validation error
+    // Clear validation error
     if (validationErrors[field]) {
       setValidationErrors(prev => ({ ...prev, [field]: null }))
     }
   }, [user, validationErrors])
 
   const handleSubmit = useCallback(async (e) => {
-    e.preventDefault()
+    e?.preventDefault?.()
     
     if (!hasChanges) return { success: false, error: 'No changes to save' }
     
-    // Validate form data
-    const validation = validateData(authValidation.updateProfile, formData)
-    
-    if (!validation.isValid) {
-      setValidationErrors(validation.errors)
+    // Note: We'd need to add updateProfile validation to validators
+    // For now, using basic validation
+    if (!formData.name?.trim()) {
+      setValidationErrors({ name: 'Name is required' })
       return { success: false, error: 'Validation failed' }
     }
     
     setValidationErrors({})
     
     try {
-      const result = await updateProfile(validation.data)
-      
-      if (result.success) {
-        setHasChanges(false)
-      }
-      
+      const result = await updateProfile(formData)
+      if (result.success) setHasChanges(false)
       return result
     } catch (error) {
-      console.error('Profile update error:', error)
       return { success: false, error: error.message }
     }
   }, [formData, hasChanges, updateProfile])
@@ -290,10 +264,6 @@ export const useProfileUpdate = () => {
     }
   }, [user])
 
-  const clearError = useCallback(() => {
-    setValidationErrors({})
-  }, [])
-
   return {
     formData,
     validationErrors,
@@ -302,11 +272,11 @@ export const useProfileUpdate = () => {
     handleInputChange,
     handleSubmit,
     resetForm,
-    clearError,
+    clearError: () => setValidationErrors({}),
   }
 }
 
-// User preferences hook (placeholder)
+// User preferences hook - simplified placeholder
 export const useUserPreferences = () => {
   const [preferences] = useState({
     theme: 'dark',
@@ -318,16 +288,13 @@ export const useUserPreferences = () => {
     }
   })
 
-  const actions = {
+  const actions = useMemo(() => ({
     setTheme: (theme) => console.log('Set theme:', theme),
     setLanguage: (language) => console.log('Set language:', language),
     setNotifications: (notifications) => console.log('Set notifications:', notifications),
-  }
+  }), [])
 
-  return {
-    preferences,
-    actions
-  }
+  return { preferences, actions }
 }
 
 export default useAuth

@@ -88,7 +88,6 @@ const FormField = ({ field, index, disabled }) => {
     helperText,
     required = false,
     autoComplete,
-    validation,
     renderCustom,
     className,
     ...fieldProps
@@ -108,11 +107,10 @@ const FormField = ({ field, index, disabled }) => {
         </label>
       )}
 
-      {/* Custom Render */}
+      {/* Custom Render or Standard Input */}
       {renderCustom ? (
         renderCustom({ field, disabled })
       ) : (
-        /* Standard Input */
         <Input
           type={type}
           name={name}
@@ -133,13 +131,22 @@ const FormField = ({ field, index, disabled }) => {
 
       {/* Helper Text */}
       {helperText && !error && (
-        <p className="text-xs text-gray-400">
-          {helperText}
-        </p>
+        <p className="text-xs text-gray-400">{helperText}</p>
       )}
     </motion.div>
   )
 }
+
+// Password toggle utility
+const createPasswordToggle = (showPassword, onToggle) => (
+  <button
+    type="button"
+    onClick={onToggle}
+    className="text-gray-400 hover:text-gray-300 transition-colors"
+  >
+    {showPassword ? '👁️‍🗨️' : '👁️'}
+  </button>
+)
 
 // Pre-configured auth forms
 export const LoginForm = ({
@@ -177,15 +184,7 @@ export const LoginForm = ({
       placeholder: 'Enter your password',
       value: password,
       onChange: (e) => onPasswordChange(e.target.value),
-      rightIcon: (
-        <button
-          type="button"
-          onClick={onTogglePassword}
-          className="text-gray-400 hover:text-gray-300 transition-colors"
-        >
-          {showPassword ? '👁️‍🗨️' : '👁️'}
-        </button>
-      ),
+      rightIcon: createPasswordToggle(showPassword, onTogglePassword),
       error: passwordError,
       required: true,
       autoComplete: 'current-password'
@@ -271,15 +270,7 @@ export const RegisterForm = ({
       placeholder: 'Create a password',
       value: password,
       onChange: (e) => onPasswordChange(e.target.value),
-      rightIcon: (
-        <button
-          type="button"
-          onClick={onTogglePassword}
-          className="text-gray-400 hover:text-gray-300 transition-colors"
-        >
-          {showPassword ? '👁️‍🗨️' : '👁️'}
-        </button>
-      ),
+      rightIcon: createPasswordToggle(showPassword, onTogglePassword),
       error: validationErrors.password,
       required: true,
       autoComplete: 'new-password'
@@ -291,15 +282,7 @@ export const RegisterForm = ({
       placeholder: 'Confirm your password',
       value: confirmPassword,
       onChange: (e) => onConfirmPasswordChange(e.target.value),
-      rightIcon: (
-        <button
-          type="button"
-          onClick={onToggleConfirmPassword}
-          className="text-gray-400 hover:text-gray-300 transition-colors"
-        >
-          {showConfirmPassword ? '👁️‍🗨️' : '👁️'}
-        </button>
-      ),
+      rightIcon: createPasswordToggle(showConfirmPassword, onToggleConfirmPassword),
       error: validationErrors.confirmPassword,
       required: true,
       autoComplete: 'new-password'
