@@ -172,32 +172,54 @@ export const markConversationAsRead = async (conversationId, userId) => {
  */
 export const createOrGetDirectConversation = async (userId, participantId) => {
   if (userId.toString() === participantId.toString()) {
-    throw new Error('Cannot create direct conversation with self');
+    const error = new Error('Cannot create direct conversation with yourself');
+    error.statusCode = 400;
+    throw error;
   }
 
-  const participant = await User.findById(participantId);
-  if (!participant) {
-    const error = new Error('User not found');
+  const participant = await User.findById(participantId).select('_id name email avatar isActive');
+  if (!participant || !participant.isActive) {
+    const error = new Error('User not found or inactive');
     error.statusCode = 404;
     throw error;
   }
 
+  // Find existing direct conversation between these two users
   const existing = await Conversation.findOne({
     type: 'direct',
-    'participants.user': { $all: [userId, participantId] },
-  }).populate('participants.user', 'name email avatar');
+    isActive: true,
+    $and: [
+      { 'participants.user': userId },
+      { 'participants.user': participantId }
+    ]
+  }).populate('participants.user', 'name email avatar status lastSeen');
 
-  if (existing) return existing;
+  if (existing) {
+    return existing;
+  }
 
+  // Create new direct conversation
   const convo = new Conversation({
     type: 'direct',
-    participants: [{ user: userId }, { user: participantId }],
+    participants: [
+      { user: userId, role: 'member', joinedAt: new Date() }, 
+      { user: participantId, role: 'member', joinedAt: new Date() }
+    ],
     createdBy: userId,
+    isActive: true,
+    settings: {
+      allowNewMembers: false,
+      muteNotifications: false,
+      archived: false
+    }
   });
+  
   await convo.save();
-  await convo.populate('participants.user', 'name email avatar');
+  await convo.populate('participants.user', 'name email avatar status lastSeen');
+  
   return convo;
 };
+
 
 /**
  * Create group conversation

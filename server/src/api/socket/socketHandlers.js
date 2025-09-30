@@ -15,9 +15,14 @@ export const handleConnection = (io) => async (socket) => {
     socket.broadcast.emit('user_online', { userId: socket.userId, lastSeen: null });
   }
 
+  // Join user's conversations on connect
   try {
     const { default: Conversation } = await import('../models/Conversation.js');
-    const conversations = await Conversation.find({ 'participants.user': socket.userId });
+    const conversations = await Conversation.find({ 
+      'participants.user': socket.userId,
+      isActive: true 
+    });
+    
     conversations.forEach((c) => {
       socket.join(c._id.toString());
     });
@@ -30,15 +35,26 @@ export const handleConnection = (io) => async (socket) => {
 
   socket.on('join_conversation', async (conversationId) => {
     try {
+      if (!conversationId) {
+        return socket.emit('error', { message: 'Conversation ID required' });
+      }
+
       const { default: Conversation } = await import('../models/Conversation.js');
-      const conversation = await Conversation.findById(conversationId);
-      if (conversation && conversation.hasParticipant(socket.userId)) {
+      const conversation = await Conversation.findById(conversationId)
+        .populate('participants.user', '_id name email');
+
+      if (!conversation) {
+        return socket.emit('error', { message: 'Conversation not found' });
+      }
+
+      if (conversation.hasParticipant(socket.userId)) {
         socket.join(conversationId);
         socket.emit('joined_conversation', { conversationId });
       } else {
         socket.emit('error', { message: 'Not authorized to join this conversation' });
       }
-    } catch {
+    } catch (error) {
+      console.error('join_conversation error:', error);
       socket.emit('error', { message: 'Failed to join conversation' });
     }
   });
@@ -48,9 +64,10 @@ export const handleConnection = (io) => async (socket) => {
     socket.emit('left_conversation', { conversationId });
   });
 
+  // FIXED: Send message handler with confirmation
   socket.on('send_message', async (data) => {
     try {
-      const { conversationId, content, type = 'text', replyTo = null, attachments = [] } = data;
+      const { conversationId, content, type = 'text', replyTo = null, attachments = [], tempId } = data;
       const { default: Conversation } = await import('../models/Conversation.js');
       const { default: Message } = await import('../models/Message.js');
 
@@ -90,7 +107,19 @@ export const handleConnection = (io) => async (socket) => {
 
       await convo.updateLastMessage(content.trim(), socket.userId);
 
-      io.to(conversationId).emit('new_message', { message: message.toObject(), conversationId });
+      // FIXED: Send to others (excluding sender)
+      socket.to(conversationId).emit('new_message', { 
+        message: message.toObject(), 
+        conversationId 
+      });
+      
+      // FIXED: Send confirmation back to sender with tempId for matching
+      socket.emit('message_sent', { 
+        message: message.toObject(),
+        tempId: tempId, // For replacing optimistic message
+        conversationId
+      });
+
     } catch (err) {
       console.error('send_message error', err);
       socket.emit('error', { message: 'Failed to send message' });
@@ -107,7 +136,7 @@ export const handleConnection = (io) => async (socket) => {
           if (message) await message.markAsRead(socket.userId);
         })
       );
-      io.to(conversationId).emit('message_read', { conversationId, userId: socket.userId });
+      socket.to(conversationId).emit('message_read', { conversationId, userId: socket.userId });
     } catch (err) {
       console.error('mark_message_read error', err);
       socket.emit('error', { message: 'Failed to mark messages read' });
@@ -142,7 +171,7 @@ export const handleConnection = (io) => async (socket) => {
       if (!message) return;
       
       await message.addReaction(socket.userId, emoji);
-      io.to(message.conversation.toString()).emit('reaction_updated', {
+      socket.to(message.conversation.toString()).emit('reaction_updated', {
         messageId,
         reactions: message.reactions,
       });
@@ -159,7 +188,7 @@ export const handleConnection = (io) => async (socket) => {
       if (!message) return;
       
       await message.removeReaction(socket.userId, emoji);
-      io.to(message.conversation.toString()).emit('reaction_updated', {
+      socket.to(message.conversation.toString()).emit('reaction_updated', {
         messageId,
         reactions: message.reactions,
       });
@@ -290,18 +319,16 @@ export const handleConnection = (io) => async (socket) => {
 
   socket.on('request_conversation_info', async ({ conversationId }) => {
     try {
+      if (!conversationId) return;
+
       const { default: Conversation } = await import('../models/Conversation.js');
       const conversation = await Conversation.findById(conversationId)
         .populate('participants.user', 'name email avatar status lastSeen')
         .populate('lastMessage.sender', 'name avatar');
         
-      if (!conversation) {
-        return socket.emit('error', { message: 'Conversation not found' });
-      }
+      if (!conversation) return;
       
-      if (!conversation.hasParticipant(socket.userId)) {
-        return socket.emit('error', { message: 'Unauthorized access to conversation' });
-      }
+      if (!conversation.hasParticipant(socket.userId)) return;
       
       socket.emit('conversation_info', {
         conversationId,
@@ -309,7 +336,6 @@ export const handleConnection = (io) => async (socket) => {
       });
     } catch (err) {
       console.error('request_conversation_info error', err);
-      socket.emit('error', { message: 'Failed to get conversation info' });
     }
   });
 

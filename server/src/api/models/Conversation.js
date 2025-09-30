@@ -78,14 +78,27 @@ conversationSchema.virtual('participantCount').get(function () {
   return this.participants.length;
 });
 
-// Check if user is a participant
+// FIXED: Check if user is a participant with better ObjectId handling
 conversationSchema.methods.hasParticipant = function (userId) {
-  return this.participants.some((p) => p.user.toString() === userId.toString());
+  if (!userId) return false;
+  
+  const userIdString = userId.toString();
+  return this.participants.some((p) => {
+    // Handle both populated and non-populated participants
+    const participantId = p.user._id || p.user;
+    return participantId.toString() === userIdString;
+  });
 };
 
 // Get participant object by userId
 conversationSchema.methods.getParticipant = function (userId) {
-  return this.participants.find((p) => p.user.toString() === userId.toString());
+  if (!userId) return null;
+  
+  const userIdString = userId.toString();
+  return this.participants.find((p) => {
+    const participantId = p.user._id || p.user;
+    return participantId.toString() === userIdString;
+  });
 };
 
 // Add participant if allowed and not present
@@ -98,7 +111,12 @@ conversationSchema.methods.addParticipant = function (userId, role = 'member') {
 
 // Remove participant
 conversationSchema.methods.removeParticipant = function (userId) {
-  const index = this.participants.findIndex((p) => p.user.toString() === userId.toString());
+  const userIdString = userId.toString();
+  const index = this.participants.findIndex((p) => {
+    const participantId = p.user._id || p.user;
+    return participantId.toString() === userIdString;
+  });
+  
   if (index >= 0) {
     this.participants.splice(index, 1);
     return this.save();
@@ -123,7 +141,11 @@ conversationSchema.methods.updateLastMessage = function (content, senderId) {
 
 // Static method to find user's active conversations with detailed user info
 conversationSchema.statics.findUserConversations = function (userId) {
-  return this.find({ 'participants.user': userId, isActive: true, 'settings.archived': false })
+  return this.find({ 
+    'participants.user': userId, 
+    isActive: true, 
+    'settings.archived': false 
+  })
     .populate('participants.user', 'name email avatar status lastSeen')
     .populate('lastMessage.sender', 'name avatar')
     .sort({ 'lastMessage.timestamp': -1 });
