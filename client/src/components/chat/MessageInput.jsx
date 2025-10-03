@@ -2,9 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Send, 
-  Paperclip, 
-  Smile, 
-  Mic,
+  Smile,
   X
 } from 'lucide-react';
 import { useChat } from '../../hooks/useChat';
@@ -168,16 +166,6 @@ const MessageInput = ({ conversationId }) => {
       {/* Message Input */}
       <form onSubmit={handleSubmit} className="p-4">
         <div className="flex items-end space-x-3">
-          {/* Attachment button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="p-2 text-gray-400 hover:text-white flex-shrink-0"
-          >
-            <Paperclip className="w-5 h-5" />
-          </Button>
-
           {/* Input container */}
           <div className="flex-1 relative">
             <div className="flex items-end bg-white/10 border border-white/20 rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent transition-all">
@@ -244,23 +232,13 @@ const MessageInput = ({ conversationId }) => {
             </AnimatePresence>
           </div>
 
-          {/* Voice message button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="p-2 text-gray-400 hover:text-white flex-shrink-0"
-          >
-            <Mic className="w-5 h-5" />
-          </Button>
-
           {/* Send button */}
           <Button
             type="submit"
             variant="primary"
             size="sm"
             disabled={!message.trim()}
-            className="p-2 flex-shrink-0"
+            className="p-3 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-5 h-5" />
           </Button>

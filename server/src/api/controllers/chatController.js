@@ -119,32 +119,80 @@ export const deleteMessageController = async (req, res) => {
 
 /**
  * Add reaction to a message
+ * FIXED: Return properly formatted reaction data with user details
  */
 export const addReactionController = async (req, res) => {
   try {
     const { messageId, emoji } = req.body;
+    
+    if (!messageId || !emoji) {
+      return res.status(400).json({ success: false, message: 'messageId and emoji are required' });
+    }
+
     const message = await addReactionToMessage(messageId, req.user._id, emoji);
-    res.json({ success: true, data: message });
+    
+    // FIXED: Format reactions with complete user details for frontend
+    const formattedReactions = message.reactions.map(reaction => ({
+      emoji: reaction.emoji,
+      user: reaction.user._id,
+      userDetails: {
+        _id: reaction.user._id,
+        name: reaction.user.name,
+        email: reaction.user.email,
+        avatar: reaction.user.avatar
+      },
+      reactedAt: reaction.timestamp
+    }));
+    
+    res.json({ 
+      success: true, 
+      data: {
+        messageId: message._id,
+        reactions: formattedReactions
+      }
+    });
   } catch (error) {
-    console.error(error);
+    console.error('Add reaction error:', error);
     res.status(500).json({ success: false, message: 'Adding reaction failed' });
   }
 };
 
 /**
- * Remove reaction from a message
+ * Remove reaction from a message  
+ * FIXED: Return properly formatted reaction data with user details
  */
 export const removeReactionController = async (req, res) => {
   try {
     const { messageId, emoji } = req.body;
+    
     if (!messageId || !emoji) {
-      return res.status(400).json({ success: false, message: 'messageId and emoji required' });
+      return res.status(400).json({ success: false, message: 'messageId and emoji are required' });
     }
 
     const message = await removeReactionFromMessage(messageId, req.user._id, emoji);
-    res.json({ success: true, data: message });
+    
+    // FIXED: Format reactions with complete user details for frontend  
+    const formattedReactions = message.reactions.map(reaction => ({
+      emoji: reaction.emoji,
+      user: reaction.user._id,
+      userDetails: {
+        _id: reaction.user._id,
+        name: reaction.user.name,
+        email: reaction.user.email,
+        avatar: reaction.user.avatar
+      },
+      reactedAt: reaction.timestamp
+    }));
+    
+    res.json({ 
+      success: true, 
+      data: {
+        messageId: message._id,
+        reactions: formattedReactions
+      }
+    });
   } catch (error) {
-    console.error(error);
+    console.error('Remove reaction error:', error);
     res.status(500).json({ success: false, message: 'Removing reaction failed' });
   }
 };

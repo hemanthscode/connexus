@@ -151,9 +151,9 @@ class SocketService {
       this.emit('user_stop_typing', data);
     });
 
-    // REACTION EVENTS
+    // ENHANCED: Reaction events with better logging
     this.socket.on('reaction_updated', (data) => {
-      console.log('😀 Reaction updated:', data?.messageId);
+      console.log('😀 Reaction updated:', data?.messageId, data?.reactions?.length || 0, 'reactions');
       this.emit('reaction_updated', data);
     });
 
@@ -362,15 +362,36 @@ class SocketService {
     }
   }
 
+  // ENHANCED: Better reaction methods with user details and logging
   addReaction(messageId, emoji) {
+    console.log('➕ Sending add reaction:', messageId, emoji);
     if (this.socket?.connected) {
-      this.socket.emit('add_reaction', { messageId, emoji });
+      this.socket.emit('add_reaction', { 
+        messageId, 
+        emoji,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      this.messageQueue.push({ 
+        event: 'add_reaction', 
+        data: { messageId, emoji, timestamp: new Date().toISOString() }
+      });
     }
   }
 
   removeReaction(messageId, emoji) {
+    console.log('➖ Sending remove reaction:', messageId, emoji);
     if (this.socket?.connected) {
-      this.socket.emit('remove_reaction', { messageId, emoji });
+      this.socket.emit('remove_reaction', { 
+        messageId, 
+        emoji,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      this.messageQueue.push({ 
+        event: 'remove_reaction', 
+        data: { messageId, emoji, timestamp: new Date().toISOString() }
+      });
     }
   }
 

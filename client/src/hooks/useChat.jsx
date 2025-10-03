@@ -5,38 +5,80 @@ import { useSocket } from './useSocket';
 
 export const useChat = () => {
   const { user } = useAuthStore();
-  const chatStore = useChatStore();
   const socket = useSocket();
   
+  // FIXED: Subscribe to all relevant store state
+  const {
+    conversations,
+    messages,
+    activeConversationId,
+    temporaryConversation,
+    isLoading,
+    error,
+    currentUser,
+    messageEditingId,
+    replyToMessage,
+    searchResults,
+    unreadCounts,
+    _updateCounter, // FIXED: Subscribe to update counter
+    // Actions
+    setCurrentUser,
+    setActiveConversation,
+    setTemporaryConversation,
+    loadConversations,
+    loadMessages,
+    sendMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
+    searchUsers,
+    setMessageEditing,
+    setReplyToMessage,
+    clearReplyToMessage,
+    getUnreadCount,
+    markConversationAsRead,
+    getCurrentConversation,
+    getCurrentConversationId,
+    setupSocketEvents
+  } = useChatStore();
+
   const userSetRef = useRef(false);
   const conversationsLoadedRef = useRef(false);
   const messagesLoadedRef = useRef(new Set());
+  const socketEventsSetupRef = useRef(false);
+
+  // Setup socket events once
+  useEffect(() => {
+    if (socket.isConnected && !socketEventsSetupRef.current) {
+      console.log('🔌 Setting up socket events...');
+      setupSocketEvents();
+      socketEventsSetupRef.current = true;
+    }
+  }, [socket.isConnected, setupSocketEvents]);
 
   useEffect(() => {
     if (user && !userSetRef.current) {
       console.log('👤 Setting current user in chat store:', user.name);
-      chatStore.setCurrentUser(user);
+      setCurrentUser(user);
       userSetRef.current = true;
     }
-  }, [user?._id]);
+  }, [user?._id, setCurrentUser]);
 
   useEffect(() => {
     if (socket.isConnected && !conversationsLoadedRef.current) {
       console.log('📋 Loading conversations...');
       conversationsLoadedRef.current = true;
-      chatStore.loadConversations();
+      loadConversations();
     }
-  }, [socket.isConnected]);
+  }, [socket.isConnected, loadConversations]);
 
   useEffect(() => {
-    const activeId = chatStore.activeConversationId;
-    
-    if (activeId && !messagesLoadedRef.current.has(activeId)) {
-      console.log('💬 Loading messages for conversation:', activeId);
-      messagesLoadedRef.current.add(activeId);
-      chatStore.loadMessages(activeId);
+    if (activeConversationId && !messagesLoadedRef.current.has(activeConversationId)) {
+      console.log('💬 Loading messages for conversation:', activeConversationId);
+      messagesLoadedRef.current.add(activeConversationId);
+      loadMessages(activeConversationId);
     }
-  }, [chatStore.activeConversationId]);
+  }, [activeConversationId, loadMessages]);
 
   useEffect(() => {
     return () => {
@@ -44,31 +86,43 @@ export const useChat = () => {
         userSetRef.current = false;
         conversationsLoadedRef.current = false;
         messagesLoadedRef.current.clear();
+        socketEventsSetupRef.current = false;
       }
     };
   }, [user]);
 
+  // FIXED: Get current conversation messages
+  const currentConversationId = getCurrentConversationId();
+  const currentMessages = messages.get(currentConversationId) || [];
+
   return {
-    conversations: chatStore.conversations,
-    messages: chatStore.messages.get(chatStore.activeConversationId) || [],
-    activeConversationId: chatStore.activeConversationId,
-    isLoading: chatStore.isLoading,
-    error: chatStore.error,
-    currentUser: chatStore.currentUser,
-    messageEditingId: chatStore.messageEditingId,
-    replyToMessage: chatStore.replyToMessage,
-    searchResults: chatStore.searchResults,
-    setActiveConversation: chatStore.setActiveConversation,
-    loadConversations: chatStore.loadConversations,
-    loadMessages: chatStore.loadMessages,
-    sendMessage: chatStore.sendMessage,
-    editMessage: chatStore.editMessage,
-    deleteMessage: chatStore.deleteMessage,
-    toggleReaction: chatStore.toggleReaction,
-    searchUsers: chatStore.searchUsers,
-    createDirectConversation: chatStore.createDirectConversation,
-    setMessageEditing: chatStore.setMessageEditing,
-    setReplyToMessage: chatStore.setReplyToMessage,
-    clearReplyToMessage: chatStore.clearReplyToMessage,
+    conversations,
+    messages: currentMessages, // FIXED: Return current conversation messages
+    activeConversationId,
+    temporaryConversation,
+    currentConversation: getCurrentConversation(),
+    currentConversationId,
+    isLoading,
+    error,
+    currentUser,
+    messageEditingId,
+    replyToMessage,
+    searchResults,
+    unreadCounts, // FIXED: Expose unread counts
+    // Actions
+    setActiveConversation,
+    setTemporaryConversation,
+    loadConversations,
+    loadMessages,
+    sendMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
+    searchUsers,
+    setMessageEditing,
+    setReplyToMessage,
+    clearReplyToMessage,
+    getUnreadCount,
+    markConversationAsRead,
   };
 };

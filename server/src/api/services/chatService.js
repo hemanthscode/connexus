@@ -29,7 +29,7 @@ export const getUserConversations = async (userId) => {
 
 /**
  * Get messages for a conversation with pagination.
- * Throws 403 if user is not a participant.
+ * FIXED: Populate reaction user details
  */
 export const getConversationMessages = async (conversationId, userId, { page = 1, limit = 50 }) => {
   const convo = await Conversation.findById(conversationId);
@@ -39,6 +39,7 @@ export const getConversationMessages = async (conversationId, userId, { page = 1
     throw error;
   }
 
+  // FIXED: Use enhanced static method with reaction user population
   const messages = await Message.findConversationMessages(conversationId, page, limit);
   return messages.reverse();
 };
@@ -122,21 +123,31 @@ export const softDeleteMessage = async (messageId, userId) => {
 
 /**
  * Add reaction emoji to a message.
+ * FIXED: Return populated message with user details
  */
 export const addReactionToMessage = async (messageId, userId, emoji) => {
   const message = await Message.findById(messageId);
   if (!message) throw new Error('Message not found');
+  
   await message.addReaction(userId, emoji);
+  
+  // FIXED: Populate reaction user details before returning
+  await message.populate('reactions.user', 'name email avatar');
   return message;
 };
 
 /**
  * Remove reaction emoji from a message.
+ * FIXED: Return populated message with user details
  */
 export const removeReactionFromMessage = async (messageId, userId, emoji) => {
   const message = await Message.findById(messageId);
   if (!message) throw new Error('Message not found');
+  
   await message.removeReaction(userId, emoji);
+  
+  // FIXED: Populate reaction user details before returning
+  await message.populate('reactions.user', 'name email avatar');
   return message;
 };
 
@@ -219,7 +230,6 @@ export const createOrGetDirectConversation = async (userId, participantId) => {
   
   return convo;
 };
-
 
 /**
  * Create group conversation

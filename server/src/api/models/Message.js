@@ -10,10 +10,11 @@ const attachmentSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// FIXED: Enhanced reaction schema with proper user reference
 const reactionSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    emoji: { type: String },
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    emoji: { type: String, required: true },
     timestamp: { type: Date, default: Date.now },
   },
   { _id: false }
@@ -112,24 +113,29 @@ messageSchema.methods.markAsRead = async function (userId) {
   return this.save();
 };
 
-// Add reaction emoji from user if not already present
-messageSchema.methods.addReaction = function (userId, emoji) {
+// FIXED: Enhanced addReaction method with user population
+messageSchema.methods.addReaction = async function (userId, emoji) {
   const exists = this.reactions.find(
     (r) => r.user.toString() === userId.toString() && r.emoji === emoji
   );
   if (!exists) {
     this.reactions.push({ user: userId, emoji, timestamp: new Date() });
-    return this.save();
+    await this.save();
+    // FIXED: Populate the new reaction user details
+    await this.populate('reactions.user', 'name email avatar');
   }
-  return Promise.resolve(this);
+  return this;
 };
 
-// Remove a reaction from a user
-messageSchema.methods.removeReaction = function (userId, emoji) {
+// FIXED: Enhanced removeReaction method with user population
+messageSchema.methods.removeReaction = async function (userId, emoji) {
   this.reactions = this.reactions.filter(
     (r) => !(r.user.toString() === userId.toString() && r.emoji === emoji)
   );
-  return this.save();
+  await this.save();
+  // FIXED: Populate remaining reaction user details
+  await this.populate('reactions.user', 'name email avatar');
+  return this;
 };
 
 // Soft delete message
@@ -146,12 +152,13 @@ messageSchema.methods.editContent = function (newContent) {
   return this.save();
 };
 
-// Static method to find conversation messages with pagination, excluding deleted
+// FIXED: Enhanced static method to find messages with populated reactions
 messageSchema.statics.findConversationMessages = function (conversationId, page = 1, limit = 50) {
   const skip = (page - 1) * limit;
   return this.find({ conversation: conversationId, isDeleted: false })
     .populate('sender', 'name email avatar')
     .populate('replyTo', 'content sender')
+    .populate('reactions.user', 'name email avatar') // FIXED: Populate reaction users
     .sort({ createdAt: -1 })
     .limit(limit)
     .skip(skip);
