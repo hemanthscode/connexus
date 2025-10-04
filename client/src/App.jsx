@@ -1,6 +1,11 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+/**
+ * Main App Component
+ * Root application with routing and auth protection
+ */
+
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
-import Layout from './components/ui/Layout';
+import { ROUTES } from './utils/constants';
 import AuthGuard from './components/auth/AuthGuard';
 import Loading from './components/ui/Loading';
 
@@ -12,108 +17,60 @@ import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 
-function App() {
-  const { isInitialized, isLoading, isAuthenticated } = useAuth();
+// Inner component that uses auth hooks (must be inside Router context)
+function AppContent() {
+  const { isInitialized } = useAuth();
 
-  // Show loading screen while initializing auth
-  if (!isInitialized || isLoading) {
+  // Show loading while checking auth
+  if (!isInitialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
-        <div className="text-center">
-          <div className="w-16 h-16 mb-4 mx-auto">
-            <Loading size="xl" />
-          </div>
-          <h2 className="text-xl font-semibold text-white mb-2">Loading Connexus</h2>
-          <p className="text-gray-300">Initializing your chat experience...</p>
-        </div>
+      <div className="h-screen w-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center">
+        <Loading size="xl" text="Initializing Connexus..." />
       </div>
     );
   }
 
   return (
-    <Layout>
-      <Routes>
-        {/* Public Routes - Redirect to chat if already authenticated */}
-        <Route 
-          path="/login" 
-          element={
-            isAuthenticated ? (
-              <Navigate to="/chat" replace />
-            ) : (
-              <Login />
-            )
-          } 
-        />
-        <Route 
-          path="/register" 
-          element={
-            isAuthenticated ? (
-              <Navigate to="/chat" replace />
-            ) : (
-              <Register />
-            )
-          } 
-        />
-        
-        {/* Protected Routes */}
-        <Route 
-          path="/chat" 
-          element={
-            <AuthGuard>
-              <Chat />
-            </AuthGuard>
-          } 
-        />
-        
-        <Route 
-          path="/chat/:conversationId" 
-          element={
-            <AuthGuard>
-              <Chat />
-            </AuthGuard>
-          } 
-        />
-        
-        <Route 
-          path="/profile" 
-          element={
-            <AuthGuard>
-              <Profile />
-            </AuthGuard>
-          } 
-        />
-        
-        <Route 
-          path="/profile/:userId" 
-          element={
-            <AuthGuard>
-              <Profile />
-            </AuthGuard>
-          } 
-        />
-        
-        <Route 
-          path="/settings" 
-          element={
-            <AuthGuard>
-              <Settings />
-            </AuthGuard>
-          } 
-        />
-        
-        {/* Root redirect */}
-        <Route 
-          path="/" 
-          element={<Navigate to="/chat" replace />} 
-        />
-        
-        {/* 404 - Not Found */}
-        <Route path="/404" element={<NotFound />} />
-        
-        {/* Catch all - redirect to 404 */}
-        <Route path="*" element={<Navigate to="/404" replace />} />
-      </Routes>
-    </Layout>
+    <Routes>
+      {/* Public Routes */}
+      <Route path={ROUTES.LOGIN} element={<Login />} />
+      <Route path={ROUTES.REGISTER} element={<Register />} />
+
+      {/* Protected Routes */}
+      <Route path={ROUTES.CHAT} element={
+        <AuthGuard>
+          <Chat />
+        </AuthGuard>
+      } />
+      
+      <Route path={`${ROUTES.PROFILE}/:userId?`} element={
+        <AuthGuard>
+          <Profile />
+        </AuthGuard>
+      } />
+      
+      <Route path={ROUTES.SETTINGS} element={
+        <AuthGuard>
+          <Settings />
+        </AuthGuard>
+      } />
+
+      {/* Redirects */}
+      <Route path="/" element={<Navigate to={ROUTES.CHAT} replace />} />
+      <Route path="/404" element={<NotFound />} />
+      
+      {/* Catch all */}
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+
+// Main App component (provides Router context)
+function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
   );
 }
 

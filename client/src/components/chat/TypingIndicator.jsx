@@ -1,18 +1,30 @@
+/**
+ * Typing Indicator Component
+ * Shows who's typing with enhanced socket integration - FIXED
+ */
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { getInitials } from '../../utils/formatters';
+import { useSocket } from '../../hooks/useSocket';
+import { useAuth } from '../../hooks/useAuth';
 
-const TypingIndicator = ({ typingUsers, conversationId }) => {
+const TypingIndicator = ({ conversationId }) => {
+  const { getTypingUsers, getTypingIndicatorText } = useSocket();
+  const { user } = useAuth();
+  
+  // FIXED: Get typing users and filter out current user
+  const allTypingUsers = getTypingUsers(conversationId) || [];
+  const typingUsers = allTypingUsers.filter(typingUser => typingUser._id !== user?._id);
+  const typingText = getTypingIndicatorText(conversationId, user?._id);
+
+  // Debug logging
+  if (process.env.NODE_ENV === 'development' && allTypingUsers.length > 0) {
+    console.log('🔤 TypingIndicator - All typing users:', allTypingUsers);
+    console.log('🔤 TypingIndicator - Filtered typing users:', typingUsers);
+    console.log('🔤 TypingIndicator - Current user ID:', user?._id);
+  }
+
   if (!typingUsers || typingUsers.length === 0) return null;
-
-  const renderTypingText = () => {
-    if (typingUsers.length === 1) {
-      return `${typingUsers[0].name} is typing...`;
-    } else if (typingUsers.length === 2) {
-      return `${typingUsers[0].name} and ${typingUsers[1].name} are typing...`;
-    } else {
-      return `${typingUsers[0].name} and ${typingUsers.length - 1} others are typing...`;
-    }
-  };
 
   return (
     <AnimatePresence>
@@ -26,7 +38,7 @@ const TypingIndicator = ({ typingUsers, conversationId }) => {
         <div className="flex -space-x-1">
           {typingUsers.slice(0, 3).map((user, index) => (
             <motion.div
-              key={user._id}
+              key={`typing-${user._id}-${index}`}
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0 }}
@@ -36,7 +48,7 @@ const TypingIndicator = ({ typingUsers, conversationId }) => {
               {user.avatar ? (
                 <img 
                   src={user.avatar} 
-                  alt={user.name} 
+                  alt={user.name || 'User'} 
                   className="w-6 h-6 rounded-full border-2 border-white"
                 />
               ) : (
@@ -58,7 +70,7 @@ const TypingIndicator = ({ typingUsers, conversationId }) => {
           className="bg-white/10 px-4 py-2 rounded-2xl flex items-center space-x-2"
         >
           <span className="text-gray-300 text-sm">
-            {renderTypingText()}
+            {typingText || `${typingUsers[0]?.name || 'Someone'} is typing...`}
           </span>
           
           {/* Animated dots */}

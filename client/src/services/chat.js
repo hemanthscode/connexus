@@ -1,113 +1,98 @@
-import api from './api';
+/**
+ * Chat Service
+ * Handles all chat-related API calls
+ */
+
+import api, { apiHelpers } from './api';
+import { CHAT_ENDPOINTS, USER_ENDPOINTS } from '../utils/constants';
 
 export const chatService = {
-  // Get user conversations
-  getConversations: () => {
-    return api.get('/chat/conversations');
+  // ============== Conversations ==============
+  
+  getConversations: () => api.get(CHAT_ENDPOINTS.CONVERSATIONS),
+  
+  createDirectConversation: (data) => 
+    api.post(CHAT_ENDPOINTS.DIRECT_CONVERSATION, data),
+  
+  createGroup: (data) => 
+    api.post(CHAT_ENDPOINTS.GROUP_CONVERSATION, data),
+  
+  getConversationInfo: (conversationId) => 
+    api.get(`${CHAT_ENDPOINTS.CONVERSATIONS}/${conversationId}`),
+  
+  archiveConversation: (conversationId, archived) => 
+    api.put(`${CHAT_ENDPOINTS.CONVERSATIONS}/${conversationId}/archive`, { archived }),
+  
+  // ============== Messages ==============
+  
+  getMessages: (conversationId, params = {}) => {
+    const url = apiHelpers.buildUrl(CHAT_ENDPOINTS.MESSAGES, { id: conversationId });
+    return api.get(url, { params: { page: 1, limit: 50, ...params } });
   },
-
-  // Get conversation messages
-  getMessages: (conversationId, { page = 1, limit = 50 } = {}) => {
-    return api.get(`/chat/conversations/${conversationId}/messages`, {
-      params: { page, limit }
-    });
-  },
-
-  // Send message
-  sendMessage: (messageData) => {
-    return api.post('/chat/messages', messageData);
-  },
-
-  // Edit message
-  editMessage: (data) => {
-    return api.put('/chat/messages/edit', data);
-  },
-
-  // Delete message
+  
+  sendMessage: (messageData) => 
+    api.post(CHAT_ENDPOINTS.SEND_MESSAGE, messageData),
+  
+  editMessage: (data) => 
+    api.put(CHAT_ENDPOINTS.EDIT_MESSAGE, data),
+  
   deleteMessage: (messageId) => {
-    return api.delete(`/chat/messages/${messageId}`);
+    const url = apiHelpers.buildUrl(CHAT_ENDPOINTS.DELETE_MESSAGE, { messageId });
+    return api.delete(url);
   },
-
-  // Mark conversation as read
+  
   markConversationAsRead: (conversationId) => {
-    return api.put(`/chat/conversations/${conversationId}/read`);
+    const url = apiHelpers.buildUrl(CHAT_ENDPOINTS.MARK_READ, { id: conversationId });
+    return api.put(url);
   },
-
-  // Add reaction
-  addReaction: (messageId, emoji) => {
-    return api.post('/chat/messages/reactions', { messageId, emoji });
-  },
-
-  // Remove reaction
-  removeReaction: (messageId, emoji) => {
-    return api.post('/chat/messages/reactions/remove', { messageId, emoji });
-  },
-
-  // Create direct conversation
-  createDirectConversation: (data) => {
-    return api.post('/chat/conversations/direct', data);
-  },
-
-  // Create group conversation
-  createGroup: (data) => {
-    return api.post('/chat/conversations/group', data);
-  },
-
-  // Update group
-  updateGroup: (groupId, data) => {
-    return api.put(`/chat/conversations/${groupId}`, data);
-  },
-
-  // Add participants to group
-  addGroupParticipants: (groupId, participants) => {
-    return api.post(`/chat/conversations/${groupId}/participants`, { participants });
-  },
-
-  // Remove participant from group
-  removeGroupParticipant: (groupId, participantId) => {
-    return api.delete(`/chat/conversations/${groupId}/participants/${participantId}`);
-  },
-
-  // Change participant role
-  changeParticipantRole: (groupId, participantId, role) => {
-    return api.put(`/chat/conversations/${groupId}/participants/role`, { participantId, role });
-  },
-
-  // Archive conversation
-  archiveConversation: (conversationId, archived) => {
-    return api.put(`/chat/conversations/${conversationId}/archive`, { archived });
-  },
-
-  // Search users
-  searchUsers: (params) => {
-    return api.get('/chat/users/search', { params });
-  },
-
-  // Get conversation info
-  getConversationInfo: (conversationId) => {
-    return api.get(`/chat/conversations/${conversationId}`);
-  },
-
-  // Leave group
-  leaveGroup: (groupId) => {
-    return api.post(`/chat/conversations/${groupId}/leave`);
-  },
-
-  // Upload file/attachment
-  uploadFile: (file, conversationId) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('conversationId', conversationId);
+  
+  // ============== Reactions ==============
+  
+  addReaction: (messageId, emoji) => 
+    api.post(CHAT_ENDPOINTS.REACTIONS, { messageId, emoji }),
+  
+  removeReaction: (messageId, emoji) => 
+    api.post(`${CHAT_ENDPOINTS.REACTIONS}/remove`, { messageId, emoji }),
+  
+  // ============== Groups ==============
+  
+  updateGroup: (groupId, data) => 
+    api.put(`${CHAT_ENDPOINTS.CONVERSATIONS}/${groupId}`, data),
+  
+  addGroupParticipants: (groupId, participants) => 
+    api.post(`${CHAT_ENDPOINTS.CONVERSATIONS}/${groupId}/participants`, { participants }),
+  
+  removeGroupParticipant: (groupId, participantId) => 
+    api.delete(`${CHAT_ENDPOINTS.CONVERSATIONS}/${groupId}/participants/${participantId}`),
+  
+  changeParticipantRole: (groupId, participantId, role) => 
+    api.put(`${CHAT_ENDPOINTS.CONVERSATIONS}/${groupId}/participants/role`, { participantId, role }),
+  
+  leaveGroup: (groupId) => 
+    api.post(`${CHAT_ENDPOINTS.CONVERSATIONS}/${groupId}/leave`),
+  
+  // ============== Users & Search ==============
+  
+  searchUsers: (params) => 
+    api.get(CHAT_ENDPOINTS.SEARCH_USERS, { params }),
+  
+  getUserProfile: (userId) => 
+    api.get(`${USER_ENDPOINTS.PROFILE}/${userId}`),
+  
+  // ============== File Upload ==============
+  
+  uploadFile: (file, conversationId, type = 'attachment') => {
+    const formData = apiHelpers.createFormData({ 
+      file, 
+      conversationId, 
+      type 
+    });
     
     return api.post('/chat/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000, // Longer timeout for uploads
     });
   },
-
-  // Get user profile
-  getUserProfile: (userId) => {
-    return api.get(`/users/${userId}`);
-  },
 };
+
+export default chatService;

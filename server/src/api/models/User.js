@@ -1,6 +1,25 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+// Helper function to validate URL format
+const validateURL = (url) => {
+  if (!url) return true; // Allow empty URLs
+  try {
+    const urlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i;
+    return urlPattern.test(url);
+  } catch (error) {
+    return false;
+  }
+};
+
+// Helper function to validate phone number [web:101]
+const validatePhone = (phone) => {
+  if (!phone) return true; // Allow empty phone numbers
+  // Supports formats: +1234567890, 123-456-7890, (123) 456-7890, 1234567890
+  const phonePattern = /^(\+\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}$/;
+  return phonePattern.test(phone);
+};
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -25,6 +44,14 @@ const userSchema = new mongoose.Schema(
       select: false,
       minlength: 6,
       description: 'Hashed password',
+    },
+    phone: {
+      type: String,
+      trim: true,
+      default: '',
+      validate: [validatePhone, 'Please provide a valid phone number'],
+      maxlength: 20,
+      description: "User's phone number",
     },
     avatar: {
       type: String,
@@ -58,7 +85,11 @@ const userSchema = new mongoose.Schema(
     },
     socialLinks: {
       type: Map,
-      of: String,
+      of: {
+        type: String,
+        validate: [validateURL, 'Please provide a valid URL'],
+        maxlength: 255,
+      },
       default: {},
       description: "User's social profile URLs (key: platform, value: URL)",
     },
@@ -100,6 +131,16 @@ userSchema.methods.getPublicProfile = function () {
   const user = this.toObject();
   delete user.password;
   delete user.__v;
+  
+  // Convert Map to plain object for JSON serialization
+  if (user.socialLinks && user.socialLinks instanceof Map) {
+    const socialLinksObj = {};
+    user.socialLinks.forEach((value, key) => {
+      socialLinksObj[key] = value;
+    });
+    user.socialLinks = socialLinksObj;
+  }
+  
   return user;
 };
 
@@ -123,6 +164,27 @@ userSchema.methods.unblockUser = function (userId) {
   this.blockedUsers = this.blockedUsers.filter(
     (id) => id.toString() !== userId.toString()
   );
+  return this.save();
+};
+
+// Helper method to update social links
+userSchema.methods.updateSocialLinks = function (socialLinksData) {
+  if (!this.socialLinks) {
+    this.socialLinks = new Map();
+  }
+  
+  // Clear existing social links
+  this.socialLinks.clear();
+  
+  // Add new social links
+  if (socialLinksData && typeof socialLinksData === 'object') {
+    Object.entries(socialLinksData).forEach(([platform, url]) => {
+      if (url && typeof url === 'string' && url.trim()) {
+        this.socialLinks.set(platform.trim(), url.trim());
+      }
+    });
+  }
+  
   return this.save();
 };
 

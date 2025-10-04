@@ -1,15 +1,18 @@
+/**
+ * Register Form Component
+ * Streamlined registration with enhanced Input component
+ */
+
 import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
-import { useState } from 'react';
+import { Mail, Lock, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { authValidation } from '../../utils/validation';
+import { ROUTES } from '../../utils/constants';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 
 const RegisterForm = () => {
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { register: registerUser, isLoading } = useAuth();
   
   const {
@@ -29,99 +32,63 @@ const RegisterForm = () => {
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 shadow-xl">
+        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
           <p className="text-gray-300">Join Connexus today</p>
         </div>
 
+        {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {/* Name Input */}
-          <div>
-            <Input
-              type="text"
-              placeholder="Enter your full name"
-              icon={<User className="w-5 h-5" />}
-              error={errors.name?.message}
-              {...register('name', authValidation.name)}
-            />
-          </div>
+          <Input
+            type="text"
+            placeholder="Enter your full name"
+            icon={<User className="w-5 h-5" />}
+            error={errors.name?.message}
+            {...register('name', authValidation.name)}
+          />
 
-          {/* Email Input */}
-          <div>
-            <Input
-              type="email"
-              placeholder="Enter your email"
-              icon={<Mail className="w-5 h-5" />}
-              error={errors.email?.message}
-              {...register('email', authValidation.email)}
-            />
-          </div>
+          <Input
+            type="email"
+            placeholder="Enter your email"
+            icon={<Mail className="w-5 h-5" />}
+            error={errors.email?.message}
+            {...register('email', authValidation.email)}
+          />
 
-          {/* Password Input */}
-          <div>
-            <Input
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Create a password"
-              icon={<Lock className="w-5 h-5" />}
-              rightIcon={
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
-                </button>
-              }
-              error={errors.password?.message}
-              {...register('password', authValidation.password)}
-            />
-          </div>
+          <Input
+            type="password"
+            placeholder="Create a password"
+            icon={<Lock className="w-5 h-5" />}
+            error={errors.password?.message}
+            {...register('password', authValidation.password)}
+          />
 
-          {/* Confirm Password Input */}
-          <div>
-            <Input
-              type={showConfirmPassword ? 'text' : 'password'}
-              placeholder="Confirm your password"
-              icon={<Lock className="w-5 h-5" />}
-              rightIcon={
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
-                </button>
-              }
-              error={errors.confirmPassword?.message}
-              {...register('confirmPassword', authValidation.confirmPassword(password))}
-            />
-          </div>
+          <Input
+            type="password"
+            placeholder="Confirm your password"
+            icon={<Lock className="w-5 h-5" />}
+            error={errors.confirmPassword?.message}
+            {...register('confirmPassword', authValidation.confirmPassword(password))}
+          />
 
-          {/* Submit Button */}
           <Button
             type="submit"
             variant="primary"
             size="lg"
-            className="w-full"
+            fullWidth
             loading={isLoading}
           >
             Create Account
           </Button>
         </form>
 
+        {/* Footer */}
         <div className="mt-6 text-center">
           <p className="text-gray-300">
             Already have an account?{' '}
             <Link
-              to="/login"
+              to={ROUTES.LOGIN}
               className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
             >
               Sign in

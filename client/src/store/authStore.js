@@ -1,6 +1,12 @@
+/**
+ * Authentication State Management
+ * Handles user auth state and operations
+ */
+
 import { create } from 'zustand';
 import { authService } from '../services/auth';
 import { STORAGE_KEYS } from '../utils/constants';
+import { formatError } from '../utils/formatters';
 import toast from 'react-hot-toast';
 
 const useAuthStore = create((set, get) => ({
@@ -9,150 +15,113 @@ const useAuthStore = create((set, get) => ({
   token: localStorage.getItem(STORAGE_KEYS.TOKEN),
   isAuthenticated: false,
   isLoading: false,
-  isInitialized: false, // NEW: Track if initial check is done
+  isInitialized: false,
   error: null,
 
-  // Actions
-  setUser: (user) => set({ user, isAuthenticated: !!user }),
-  
-  setToken: (token) => {
+  // Internal helpers
+  _setAuthState: (authData) => {
+    const { user = null, token = null, isAuthenticated = false } = authData;
+    
     if (token) {
       localStorage.setItem(STORAGE_KEYS.TOKEN, token);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     } else {
       localStorage.removeItem(STORAGE_KEYS.TOKEN);
       localStorage.removeItem(STORAGE_KEYS.USER);
     }
-    set({ token });
+    
+    set({ user, token, isAuthenticated, isInitialized: true });
   },
 
-  setLoading: (isLoading) => set({ isLoading }),
-  
-  setError: (error) => set({ error }),
-
-  // Register user
-  register: async (userData) => {
+  _handleAuthAction: async (action, successMessage) => {
     set({ isLoading: true, error: null });
+    
     try {
-      const response = await authService.register(userData);
-      const { token, user } = response.data;
+      const result = await action();
       
-      get().setToken(token);
-      set({ 
-        user, 
-        isAuthenticated: true,
-        isInitialized: true 
-      });
+      if (result?.data) {
+        const { token, user } = result.data;
+        get()._setAuthState({ user, token, isAuthenticated: true });
+      }
       
-      toast.success('Registration successful!');
-      return { success: true };
+      if (successMessage) toast.success(successMessage);
+      return { success: true, data: result?.data };
+      
     } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Registration failed';
-      set({ error: errorMessage });
-      toast.error(errorMessage);
-      return { success: false, error: errorMessage };
+      const message = formatError(error);
+      set({ error: message });
+      toast.error(message);
+      return { success: false, error: message };
+      
     } finally {
       set({ isLoading: false });
     }
   },
 
-  // Login user
-  login: async (credentials) => {
-    set({ isLoading: true, error: null });
-    try {
-      const response = await authService.login(credentials);
-      const { token, user } = response.data;
-      
-      get().setToken(token);
-      set({ 
-        user, 
-        isAuthenticated: true,
-        isInitialized: true 
-      });
-      
-      toast.success('Login successful!');
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Login failed';
-      set({ error: errorMessage });
-      toast.error(errorMessage);
-      return { success: false, error: errorMessage };
-    } finally {
-      set({ isLoading: false });
-    }
-  },
+  // Actions
+  setUser: (user) => set({ user, isAuthenticated: !!user }),
 
-  // Logout user
+  register: (userData) => 
+    get()._handleAuthAction(
+      () => authService.register(userData),
+      'Registration successful!'
+    ),
+
+  login: (credentials) => 
+    get()._handleAuthAction(
+      () => authService.login(credentials),
+      'Login successful!'
+    ),
+
   logout: async () => {
     try {
       await authService.logout();
     } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      get().setToken(null);
-      set({ 
-        user: null, 
-        isAuthenticated: false, 
-        isInitialized: true,
-        error: null 
-      });
-      toast.success('Logged out successfully');
+      console.warn('Logout API failed:', error);
     }
+    
+    get()._setAuthState({});
+    toast.success('Logged out successfully');
   },
 
-  // Check auth status on app load - FIXED: Only run once
   checkAuth: async () => {
-    const state = get();
-    
-    // Prevent multiple calls
-    if (state.isInitialized || state.isLoading) {
-      return;
-    }
+    const { isInitialized, isLoading } = get();
+    if (isInitialized || isLoading) return;
 
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
     if (!token) {
-      set({ isInitialized: true, isAuthenticated: false });
+      set({ isInitialized: true });
       return;
     }
 
     set({ isLoading: true });
+    
     try {
       const response = await authService.getProfile();
-      set({ 
+      get()._setAuthState({ 
         user: response.data, 
-        isAuthenticated: true,
-        token,
-        isInitialized: true
+        token, 
+        isAuthenticated: true 
       });
     } catch (error) {
-      // Token is invalid
       console.error('Auth check failed:', error);
-      get().setToken(null);
-      set({ 
-        user: null, 
-        isAuthenticated: false,
-        isInitialized: true 
-      });
+      get()._setAuthState({});
     } finally {
       set({ isLoading: false });
     }
   },
 
-  // Change password
-  changePassword: async (passwordData) => {
-    set({ isLoading: true, error: null });
-    try {
-      await authService.changePassword(passwordData);
-      toast.success('Password changed successfully!');
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Password change failed';
-      set({ error: errorMessage });
-      toast.error(errorMessage);
-      return { success: false, error: errorMessage };
-    } finally {
-      set({ isLoading: false });
-    }
-  },
+  changePassword: (passwordData) =>
+    get()._handleAuthAction(
+      () => authService.changePassword(passwordData),
+      'Password changed successfully!'
+    ),
+
+  updateProfile: (profileData) =>
+    get()._handleAuthAction(
+      () => authService.updateProfile(profileData),
+      'Profile updated successfully!'
+    ),
 }));
 
 export default useAuthStore;

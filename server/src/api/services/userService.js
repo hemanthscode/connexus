@@ -30,7 +30,26 @@ export const updateUserProfile = async (userId, updateData) => {
     }
   }
 
-  const user = await User.findByIdAndUpdate(userId, updateData, { new: true, runValidators: true });
+  // Handle socialLinks Map field properly for Mongoose
+  if (updateData.socialLinks && updateData.socialLinks instanceof Map) {
+    const socialLinksObject = {};
+    updateData.socialLinks.forEach((value, key) => {
+      socialLinksObject[key] = value;
+    });
+    updateData.socialLinks = socialLinksObject;
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId, 
+    updateData, 
+    { 
+      new: true, 
+      runValidators: true,
+      // This option is important for Map fields
+      overwrite: false,
+      upsert: false
+    }
+  );
 
   if (!user) {
     const error = new Error('User not found');

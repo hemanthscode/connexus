@@ -31,6 +31,10 @@ export const getUserConversations = async (userId) => {
  * Get messages for a conversation with pagination.
  * FIXED: Populate reaction user details
  */
+/**
+ * Get messages for a conversation with pagination.
+ * FIXED: Enhanced population including replyTo.sender
+ */
 export const getConversationMessages = async (conversationId, userId, { page = 1, limit = 50 }) => {
   const convo = await Conversation.findById(conversationId);
   if (!convo || !convo.hasParticipant(userId) || convo.settings.archived) {
@@ -39,8 +43,27 @@ export const getConversationMessages = async (conversationId, userId, { page = 1
     throw error;
   }
 
-  // FIXED: Use enhanced static method with reaction user population
-  const messages = await Message.findConversationMessages(conversationId, page, limit);
+  // FIXED: Direct query with proper nested population instead of static method
+  const skip = (page - 1) * limit;
+  
+  const messages = await Message.find({ 
+    conversation: conversationId,
+    isDeleted: false 
+  })
+    .populate('sender', 'name email avatar')
+    .populate({
+      path: 'replyTo',
+      populate: {
+        path: 'sender',
+        select: 'name email avatar'
+      }
+    })
+    .populate('reactions.user', 'name email avatar')
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .lean();
+
   return messages.reverse();
 };
 

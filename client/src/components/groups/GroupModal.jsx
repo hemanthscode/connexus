@@ -1,24 +1,30 @@
+/**
+ * Group Modal Component - ENHANCED GROUP CREATION
+ * Fixed with better validation and error handling
+ */
+
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Users, Search, UserMinus, Crown, Shield } from 'lucide-react';
+import { X, Users, Search, UserMinus, Crown, Shield, UserPlus } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useChat } from '../../hooks/useChat';
 import { useSocket } from '../../hooks/useSocket';
-import { getInitials } from '../../utils/formatters';
-import { authValidation } from '../../utils/validation';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import Modal from '../ui/Modal';
+import Avatar from '../ui/Avatar';
 import toast from 'react-hot-toast';
 
-const GroupModal = ({ isOpen, onClose, group = null }) => {
+const GroupModal = ({ isOpen, onClose, group = null, onGroupCreated }) => {
   const [activeTab, setActiveTab] = useState('info');
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedUsers, setSelectedUsers] = useState([]);
   
   const { 
     searchUsers, 
     searchResults,
-    createDirectConversation // We'll need to add group methods
+    createGroup,
+    updateGroup,
+    currentUser
   } = useChat();
   
   const { isUserOnline } = useSocket();
@@ -27,32 +33,34 @@ const GroupModal = ({ isOpen, onClose, group = null }) => {
     register,
     handleSubmit,
     reset,
-    formState: { errors }
+    watch,
+    formState: { errors, isSubmitting }
   } = useForm();
 
   const isEditMode = Boolean(group);
+  const searchQuery = watch('search', '');
 
+  // Initialize form data
   useEffect(() => {
     if (isEditMode && group) {
       reset({
-        name: group.name,
-        description: group.description
+        name: group.name || '',
+        description: group.description || '',
+        search: ''
       });
       setSelectedUsers(group.participants?.filter(p => p.role !== 'admin') || []);
     } else {
-      reset({ name: '', description: '' });
+      reset({ name: '', description: '', search: '' });
       setSelectedUsers([]);
     }
   }, [group, isEditMode, reset]);
 
+  // Search users with debouncing
   useEffect(() => {
-    if (searchQuery.length >= 2) {
-      const timer = setTimeout(() => {
-        searchUsers(searchQuery);
-      }, 300);
-      return () => clearTimeout(timer);
+    if (searchQuery && searchQuery.length >= 2) {
+      searchUsers(searchQuery);
     }
-  }, [searchQuery]);
+  }, [searchQuery, searchUsers]);
 
   const handleUserToggle = (user) => {
     setSelectedUsers(prev => {
@@ -65,301 +73,277 @@ const GroupModal = ({ isOpen, onClose, group = null }) => {
     });
   };
 
-  const handleCreateGroup = async (data) => {
+  const handleFormSubmit = async (data) => {
     try {
-      const groupData = {
-        name: data.name,
-        description: data.description,
-        participants: selectedUsers.map(u => u._id),
-        type: 'group'
-      };
+      if (isEditMode) {
+        // Update existing group
+        const updatedGroup = await updateGroup(group._id, {
+          name: data.name.trim(),
+          description: data.description.trim()
+        });
+        toast.success('Group updated successfully!');
+        onGroupCreated?.(updatedGroup);
+      } else {
+        // Create new group
+        if (!data.name.trim()) {
+          toast.error('Group name is required');
+          return;
+        }
 
-      // This would need to be implemented in chat service
-      // await createGroup(groupData);
-      console.log('Creating group:', groupData);
-      toast.success('Group created successfully!');
+        // Validate at least one participant for new groups
+        if (selectedUsers.length === 0) {
+          toast.error('Please add at least one member to the group');
+          return;
+        }
+
+        const groupData = {
+          name: data.name.trim(),
+          description: data.description.trim(),
+          participants: selectedUsers.map(u => u._id)
+        };
+
+        console.log('Creating group with data:', groupData);
+        const newGroup = await createGroup(groupData);
+        console.log('Group created:', newGroup);
+        toast.success(`Group "${newGroup.name}" created successfully!`);
+        onGroupCreated?.(newGroup);
+      }
+      
       handleClose();
     } catch (error) {
-      console.error('Failed to create group:', error);
-      toast.error('Failed to create group');
+      console.error('Group operation failed:', error);
+      toast.error(error.message || (isEditMode ? 'Failed to update group' : 'Failed to create group'));
     }
   };
 
-  const handleUpdateGroup = async (data) => {
-    try {
-      // This would need to be implemented in chat service
-      // await updateGroup(group._id, data);
-      console.log('Updating group:', data);
-      toast.success('Group updated successfully!');
-      handleClose();
-    } catch (error) {
-      console.error('Failed to update group:', error);
-      toast.error('Failed to update group');
-    }
-  };
-
-  const handleRemoveParticipant = (userId) => {
+  const handleRemoveUser = (userId) => {
     setSelectedUsers(prev => prev.filter(u => u._id !== userId));
-  };
-
-  const handleChangeRole = (userId, newRole) => {
-    setSelectedUsers(prev => 
-      prev.map(u => u._id === userId ? { ...u, role: newRole } : u)
-    );
   };
 
   const handleClose = () => {
     reset();
     setSelectedUsers([]);
-    setSearchQuery('');
     setActiveTab('info');
     onClose();
   };
 
-  if (!isOpen) return null;
+  // Filter search results to exclude already selected users and current user
+  const availableUsers = searchResults.filter(
+    user => !selectedUsers.find(selected => selected._id === user._id) && user._id !== currentUser?._id
+  );
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-        onClick={handleClose}
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-2xl bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl overflow-hidden max-h-[90vh] flex flex-col"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-white/10">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-600 rounded-full flex items-center justify-center">
-                <Users className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-white">
-                  {isEditMode ? 'Edit Group' : 'Create Group'}
-                </h2>
-                <p className="text-gray-300 text-sm">
-                  {isEditMode ? 'Manage group settings' : 'Start a group conversation'}
-                </p>
-              </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      size="lg"
+      title={isEditMode ? 'Edit Group' : 'Create Group'}
+      className="max-h-[90vh]"
+    >
+      {/* Header with icon */}
+      <div className="flex items-center space-x-3 p-6 border-b border-white/10">
+        <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-600 rounded-full flex items-center justify-center">
+          <Users className="w-5 h-5 text-white" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-white">
+            {isEditMode ? 'Edit Group' : 'Create Group'}
+          </h2>
+          <p className="text-gray-300 text-sm">
+            {isEditMode ? 'Manage group settings' : 'Start a group conversation'}
+          </p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-white/10 bg-white/5">
+        {[
+          { key: 'info', label: 'Group Info' },
+          { key: 'members', label: `Members (${selectedUsers.length})` }
+        ].map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === key
+                ? 'text-blue-400 border-b-2 border-blue-400'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <form onSubmit={handleSubmit(handleFormSubmit)} className="flex-1">
+        {activeTab === 'info' ? (
+          <div className="p-6 space-y-6">
+            <Input
+              label="Group Name"
+              placeholder="Enter group name"
+              error={errors.name?.message}
+              {...register('name', {
+                required: 'Group name is required',
+                minLength: { value: 2, message: 'Group name must be at least 2 characters' },
+                maxLength: { value: 50, message: 'Group name must be less than 50 characters' }
+              })}
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-200 mb-2">
+                Description (Optional)
+              </label>
+              <textarea
+                {...register('description', {
+                  maxLength: { value: 500, message: 'Description must be less than 500 characters' }
+                })}
+                placeholder="What's this group about?"
+                rows={3}
+                className="w-full bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+              />
+              {errors.description && (
+                <p className="mt-2 text-sm text-red-400">{errors.description.message}</p>
+              )}
             </div>
-            <Button variant="ghost" size="sm" onClick={handleClose} className="p-2">
-              <X className="w-5 h-5" />
-            </Button>
+
+            {/* Validation reminder for new groups */}
+            {!isEditMode && selectedUsers.length === 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4">
+                <div className="flex items-center space-x-2">
+                  <Users className="w-5 h-5 text-amber-400" />
+                  <p className="text-amber-300 text-sm">
+                    Don't forget to add members in the Members tab!
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">
+              <Button variant="ghost" onClick={handleClose} disabled={isSubmitting}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                loading={isSubmitting} 
+                disabled={isSubmitting || (!isEditMode && selectedUsers.length === 0)}
+              >
+                {isEditMode ? 'Save Changes' : 'Create Group'}
+              </Button>
+            </div>
           </div>
+        ) : (
+          <div className="p-6 space-y-6">
+            {/* Search Users */}
+            <Input
+              placeholder="Search users to add..."
+              icon={<Search className="w-4 h-4" />}
+              {...register('search')}
+              helperText={searchQuery.length < 2 ? 
+                'Type 2+ characters to search users' : 
+                `Found ${availableUsers.length} available users`
+              }
+            />
 
-          {/* Tabs */}
-          <div className="flex border-b border-white/10">
-            <button
-              onClick={() => setActiveTab('info')}
-              className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
-                activeTab === 'info' 
-                  ? 'text-blue-400 border-b-2 border-blue-400' 
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Group Info
-            </button>
-            <button
-              onClick={() => setActiveTab('members')}
-              className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
-                activeTab === 'members' 
-                  ? 'text-blue-400 border-b-2 border-blue-400' 
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              Members ({selectedUsers.length})
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === 'info' ? (
-              <form onSubmit={handleSubmit(isEditMode ? handleUpdateGroup : handleCreateGroup)} className="p-6 space-y-6">
-                <div>
-                  <Input
-                    label="Group Name"
-                    type="text"
-                    placeholder="Enter group name"
-                    error={errors.name?.message}
-                    {...register('name', {
-                      required: 'Group name is required',
-                      minLength: { value: 2, message: 'Name must be at least 2 characters' },
-                      maxLength: { value: 50, message: 'Name cannot exceed 50 characters' }
-                    })}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">
-                    Description (Optional)
-                  </label>
-                  <textarea
-                    {...register('description', {
-                      maxLength: { value: 200, message: 'Description cannot exceed 200 characters' }
-                    })}
-                    placeholder="What's this group about?"
-                    rows={3}
-                    className="w-full bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
-                  />
-                  {errors.description && (
-                    <p className="mt-2 text-sm text-red-400">{errors.description.message}</p>
-                  )}
-                </div>
-
-                <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">
-                  <Button variant="ghost" onClick={handleClose}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" variant="primary">
-                    {isEditMode ? 'Save Changes' : 'Create Group'}
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <div className="p-6">
-                {/* Search Users */}
-                <div className="mb-6">
-                  <Input
-                    type="text"
-                    placeholder="Search users to add..."
-                    icon={<Search className="w-5 h-5" />}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-
-                {/* Search Results */}
-                {searchQuery.length >= 2 && (
-                  <div className="mb-6">
-                    <p className="text-sm text-gray-400 mb-3">Search Results</p>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {searchResults.map((user) => {
-                        const isSelected = selectedUsers.find(u => u._id === user._id);
-                        return (
-                          <div
-                            key={user._id}
-                            className="flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="relative">
-                                {user.avatar ? (
-                                  <img 
-                                    src={user.avatar} 
-                                    alt={user.name} 
-                                    className="w-8 h-8 rounded-full"
-                                  />
-                                ) : (
-                                  <div className="w-8 h-8 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full flex items-center justify-center">
-                                    <span className="text-white text-xs">
-                                      {getInitials(user.name)}
-                                    </span>
-                                  </div>
-                                )}
-                                {isUserOnline(user._id) && (
-                                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 border border-white rounded-full"></div>
-                                )}
-                              </div>
-                              <div>
-                                <p className="text-white font-medium text-sm">{user.name}</p>
-                                <p className="text-gray-400 text-xs">{user.email}</p>
-                              </div>
-                            </div>
-                            <Button
-                              variant={isSelected ? "danger" : "secondary"}
-                              size="sm"
-                              onClick={() => handleUserToggle(user)}
-                            >
-                              {isSelected ? 'Remove' : 'Add'}
-                            </Button>
-                          </div>
-                        );
-                      })}
+            {/* Available Users */}
+            {searchQuery.length >= 2 && availableUsers.length > 0 && (
+              <div>
+                <p className="text-sm text-gray-400 mb-3">Available Users</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {availableUsers.map((user) => (
+                    <div
+                      key={user._id}
+                      className="flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Avatar
+                          src={user.avatar}
+                          name={user.name}
+                          size="sm"
+                          isOnline={isUserOnline(user._id)}
+                          showOnlineStatus={true}
+                        />
+                        <div>
+                          <p className="text-white font-medium text-sm">{user.name}</p>
+                          <p className="text-gray-400 text-xs">{user.email}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleUserToggle(user)}
+                        leftIcon={<UserPlus className="w-3 h-3" />}
+                      >
+                        Add
+                      </Button>
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
+              </div>
+            )}
 
-                {/* Selected Members */}
-                {selectedUsers.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-400 mb-3">Selected Members ({selectedUsers.length})</p>
-                    <div className="space-y-2">
-                      {selectedUsers.map((user) => (
-                        <div
-                          key={user._id}
-                          className="flex items-center justify-between p-3 bg-white/5 rounded-xl"
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="relative">
-                              {user.avatar ? (
-                                <img 
-                                  src={user.avatar} 
-                                  alt={user.name} 
-                                  className="w-8 h-8 rounded-full"
-                                />
-                              ) : (
-                                <div className="w-8 h-8 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full flex items-center justify-center">
-                                  <span className="text-white text-xs">
-                                    {getInitials(user.name)}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                            <div>
-                              <p className="text-white font-medium text-sm">{user.name}</p>
-                              <p className="text-gray-400 text-xs flex items-center space-x-1">
-                                {user.role === 'admin' && <Crown className="w-3 h-3" />}
-                                {user.role === 'moderator' && <Shield className="w-3 h-3" />}
-                                <span className="capitalize">{user.role}</span>
-                              </p>
-                            </div>
-                          </div>
-                          
+            {/* Selected Members */}
+            {selectedUsers.length > 0 && (
+              <div>
+                <p className="text-sm text-gray-400 mb-3">Selected Members ({selectedUsers.length})</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {selectedUsers.map((user) => (
+                    <div
+                      key={user._id}
+                      className="flex items-center justify-between p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Avatar
+                          src={user.avatar}
+                          name={user.name}
+                          size="sm"
+                        />
+                        <div>
+                          <p className="text-white font-medium text-sm">{user.name}</p>
                           <div className="flex items-center space-x-2">
-                            {isEditMode && user.role !== 'admin' && (
-                              <select
-                                value={user.role}
-                                onChange={(e) => handleChangeRole(user._id, e.target.value)}
-                                className="bg-white/10 border border-white/20 rounded px-2 py-1 text-white text-xs"
-                              >
-                                <option value="member">Member</option>
-                                <option value="moderator">Moderator</option>
-                              </select>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveParticipant(user._id)}
-                              className="p-1 text-red-400 hover:text-red-300"
-                            >
-                              <UserMinus className="w-4 h-4" />
-                            </Button>
+                            <p className="text-gray-400 text-xs">{user.email}</p>
+                            <span className="text-xs px-2 py-1 rounded-full bg-gray-500/20 text-gray-300 capitalize">
+                              {user.role || 'member'}
+                            </span>
                           </div>
                         </div>
-                      ))}
+                      </div>
+                      
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveUser(user._id)}
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        <UserMinus className="w-4 h-4" />
+                      </Button>
                     </div>
-                  </div>
-                )}
+                  ))}
+                </div>
+              </div>
+            )}
 
-                {selectedUsers.length === 0 && (
-                  <div className="text-center py-8">
-                    <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-400">No members added yet</p>
-                    <p className="text-gray-500 text-sm">Search and add users to the group</p>
-                  </div>
-                )}
+            {/* Empty State */}
+            {selectedUsers.length === 0 && searchQuery.length < 2 && (
+              <div className="text-center py-12">
+                <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-gray-300 font-medium mb-2">No members added yet</h3>
+                <p className="text-gray-500 text-sm">Search and add users to the group</p>
+              </div>
+            )}
+
+            {/* No results */}
+            {searchQuery.length >= 2 && availableUsers.length === 0 && (
+              <div className="text-center py-8">
+                <Search className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-300 font-medium">No users found</p>
+                <p className="text-gray-500 text-sm">Try different search terms</p>
               </div>
             )}
           </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+        )}
+      </form>
+    </Modal>
   );
 };
 

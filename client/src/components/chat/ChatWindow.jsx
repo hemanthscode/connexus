@@ -1,62 +1,74 @@
+/**
+ * Chat Window Component - OPTIMIZED with Group Settings
+ * Enhanced with GroupSettings integration
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Hash,
-  Users,
-  X
-} from 'lucide-react';
+import { Users, X, Settings, Info } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useChat } from '../../hooks/useChat';
 import { useSocket } from '../../hooks/useSocket';
+import { useInfiniteMessages } from '../../hooks/useInfiniteMessages';
+import { useConversationInfo } from '../../hooks/useConversationInfo';
+import { shouldGroupMessages } from '../../utils/chatHelpers';
 import { getInitials } from '../../utils/formatters';
 import Button from '../ui/Button';
+import Loading from '../ui/Loading';
+import Avatar from '../ui/Avatar';
 import MessageItem from './MessageItem';
 import MessageInput from './MessageInput';
 import TypingIndicator from './TypingIndicator';
+import GroupSettings from '../groups/GroupSettings'; // Group components import
 
 const ChatWindow = () => {
   const messagesEndRef = useRef(null);
-  const messagesContainerRef = useRef(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-  const [lastMessageCount, setLastMessageCount] = useState(0);
+  
+  // GROUP SETTINGS STATE
+  const [showGroupSettings, setShowGroupSettings] = useState(false);
   
   const { user } = useAuth();
   const { 
-    messages, 
     activeConversationId,
-    temporaryConversation,
     currentConversation,
     currentConversationId,
-    loadMessages,
     replyToMessage,
     clearReplyToMessage,
-    markConversationAsRead
+    markConversationAsRead,
+    updateConversation // Add this to handle group updates
   } = useChat();
   
-  const { 
-    getTypingUsers,
-    isUserOnline 
-  } = useSocket();
+  const { getTypingUsers } = useSocket();
+  
+  // Use infinite messages hook for pagination
+  const {
+    messages,
+    hasMore,
+    isLoadingMore,
+    loadMore
+  } = useInfiniteMessages(currentConversationId);
 
-  const displayConversation = currentConversation;
+  const conversationInfo = useConversationInfo(currentConversation);
   const displayConversationId = currentConversationId;
-  const typingUsers = getTypingUsers(displayConversationId);
 
-  // Smart auto-scroll for new messages
+  // Auto-scroll for new messages
   useEffect(() => {
-    if (messages.length > lastMessageCount && shouldAutoScroll && messagesEndRef.current) {
+    if (shouldAutoScroll && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-    setLastMessageCount(messages.length);
   }, [messages.length, shouldAutoScroll]);
 
-  // Auto-scroll for typing indicators
+  // Auto-scroll for typing indicator changes
   useEffect(() => {
-    if (typingUsers.length > 0 && shouldAutoScroll && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    const typingUsers = getTypingUsers(displayConversationId);
+    
+    if (shouldAutoScroll && typingUsers && typingUsers.length > 0 && messagesEndRef.current) {
+      setTimeout(() => {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     }
-  }, [typingUsers.length, shouldAutoScroll]);
+  }, [getTypingUsers(displayConversationId)?.length, shouldAutoScroll, displayConversationId]);
 
   // Mark messages as read when conversation becomes active
   useEffect(() => {
@@ -68,104 +80,41 @@ const ChatWindow = () => {
     }
   }, [activeConversationId, messages.length, markConversationAsRead]);
 
-  // Mark messages as read on window focus/visibility
-  useEffect(() => {
-    const handleFocus = () => {
-      if (activeConversationId) {
-        markConversationAsRead(activeConversationId);
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden && activeConversationId) {
-        markConversationAsRead(activeConversationId);
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [activeConversationId, markConversationAsRead]);
-
-  // Handle scroll and pagination
-  const handleScroll = async (e) => {
+  // Handle scroll for pagination
+  const handleScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.target;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
     
     setShouldAutoScroll(isNearBottom);
     
-    // Load more messages for real conversations only
-    if (scrollTop === 0 && !isLoadingMore && messages.length >= 50 && activeConversationId && !activeConversationId.startsWith('temp_')) {
-      setIsLoadingMore(true);
-      const currentPage = Math.ceil(messages.length / 50) + 1;
-      const scrollHeightBefore = scrollHeight;
-      
-      await loadMessages(activeConversationId, currentPage);
-      
-      setTimeout(() => {
-        if (messagesContainerRef.current) {
-          const scrollHeightAfter = messagesContainerRef.current.scrollHeight;
-          const scrollDiff = scrollHeightAfter - scrollHeightBefore;
-          messagesContainerRef.current.scrollTop = scrollDiff;
-        }
-        setIsLoadingMore(false);
-      }, 100);
+    if (scrollTop === 0 && hasMore && !isLoadingMore) {
+      loadMore();
     }
   };
 
   // Reset scroll state when changing conversations
   useEffect(() => {
     setShouldAutoScroll(true);
-    setLastMessageCount(0);
   }, [displayConversationId]);
 
-  const getConversationName = () => {
-    if (!displayConversation) return 'Select a conversation';
-    
-    if (displayConversation.type === 'group') {
-      return displayConversation.name || 'Group Chat';
-    }
-    
-    const otherParticipant = displayConversation.participants?.find(
-      p => p.user?._id !== user?._id
-    );
-    return otherParticipant?.user?.name || 'Unknown User';
+  // GROUP SETTINGS HANDLERS
+  const handleGroupUpdate = (updatedGroup) => {
+    // Update the conversation with new group data
+    updateConversation(updatedGroup._id, updatedGroup);
   };
 
-  const getConversationAvatar = () => {
-    if (!displayConversation) return null;
-    
-    if (displayConversation.type === 'group') {
-      return displayConversation.avatar;
-    }
-    
-    const otherParticipant = displayConversation.participants?.find(
-      p => p.user?._id !== user?._id
-    );
-    return otherParticipant?.user?.avatar;
+  const handleGroupDeleted = () => {
+    setShowGroupSettings(false);
+    // The group deletion will be handled by the chat hook
   };
 
-  const getParticipantStatus = () => {
-    if (!displayConversation || displayConversation.type === 'group') {
-      return `${displayConversation?.participants?.length || 0} members`;
-    }
-    
-    const otherParticipant = displayConversation.participants?.find(
-      p => p.user?._id !== user?._id
-    );
-    
-    if (!otherParticipant) return 'Unknown';
-    
-    const isOnline = isUserOnline(otherParticipant.user._id);
-    return isOnline ? 'Online' : 'Offline';
-  };
+  // Get user's role in the group (if applicable)
+  const userParticipant = currentConversation?.type === 'group' 
+    ? currentConversation.participants?.find(p => p.user._id === user._id)
+    : null;
 
-  // Show welcome screen if no conversation selected
-  if (!displayConversation) {
+  // Welcome screen
+  if (!currentConversation) {
     return (
       <div className="flex-1 flex items-center justify-center bg-white/2 overflow-hidden">
         <motion.div
@@ -183,6 +132,7 @@ const ChatWindow = () => {
             <p>🚀 Real-time messaging</p>
             <p>⚡ Instant notifications</p>
             <p>🎯 Live typing indicators</p>
+            <p>👥 Group conversations</p>
           </div>
         </motion.div>
       </div>
@@ -191,52 +141,25 @@ const ChatWindow = () => {
 
   return (
     <div className="flex-1 flex flex-col bg-white/2 overflow-hidden">
-      {/* Clean Header - No Unnecessary Buttons */}
+      {/* Header */}
       <div className="flex-shrink-0 border-b border-white/10 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4 min-w-0 flex-1">
-            {/* Avatar - Clickable for Profile */}
-            <button
-              className="relative flex-shrink-0 hover:opacity-80 transition-opacity"
-              onClick={() => {
-                // TODO: Open profile modal for the other participant
-                console.log('Open profile for:', getConversationName());
-              }}
-            >
-              {displayConversation.type === 'group' ? (
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-md">
-                  <Hash className="w-6 h-6 text-white" />
-                </div>
-              ) : (
-                <>
-                  {getConversationAvatar() ? (
-                    <img 
-                      src={getConversationAvatar()} 
-                      alt={getConversationName()} 
-                      className="w-12 h-12 rounded-xl object-cover shadow-md"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-600 rounded-xl flex items-center justify-center shadow-md">
-                      <span className="text-white font-medium">
-                        {getInitials(getConversationName())}
-                      </span>
-                    </div>
-                  )}
-                  {displayConversation.type === 'direct' && getParticipantStatus() === 'Online' && (
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full shadow-sm"></div>
-                  )}
-                </>
-              )}
-            </button>
+            <Avatar
+              src={conversationInfo.avatar}
+              name={conversationInfo.name}
+              type={conversationInfo.type}
+              size="lg"
+              isOnline={conversationInfo.isOnline}
+              showOnlineStatus={conversationInfo.type === 'direct'}
+            />
 
-            {/* Conversation Info */}
             <div className="min-w-0 flex-1">
               <div className="flex items-center space-x-2">
                 <h1 className="text-lg font-semibold text-white truncate">
-                  {getConversationName()}
+                  {conversationInfo.name}
                 </h1>
-                {/* Temporary conversation indicator */}
-                {displayConversation.isTemporary && (
+                {currentConversation.isTemporary && (
                   <motion.span 
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -245,15 +168,56 @@ const ChatWindow = () => {
                     New Chat
                   </motion.span>
                 )}
+                {currentConversation.type === 'group' && userParticipant && (
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium capitalize ${
+                    userParticipant.role === 'admin' 
+                      ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                      : userParticipant.role === 'moderator'
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                        : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                  }`}>
+                    {userParticipant.role}
+                  </span>
+                )}
               </div>
               <p className="text-sm text-gray-400 truncate">
-                {displayConversation.isTemporary 
+                {currentConversation.isTemporary 
                   ? 'Start by sending a message' 
-                  : getParticipantStatus()
+                  : conversationInfo.status
                 }
               </p>
             </div>
           </div>
+
+          {/* GROUP ACTIONS */}
+          {currentConversation.type === 'group' && !currentConversation.isTemporary && (
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowGroupSettings(true)}
+                className="p-2"
+                title="Group Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* DIRECT CHAT INFO (Optional) */}
+          {currentConversation.type === 'direct' && !currentConversation.isTemporary && (
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="p-2"
+                title="Chat Info"
+                disabled
+              >
+                <Info className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -283,7 +247,7 @@ const ChatWindow = () => {
                 variant="ghost"
                 size="sm"
                 onClick={clearReplyToMessage}
-                className="p-1 text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                className="p-1"
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -295,24 +259,18 @@ const ChatWindow = () => {
       {/* Messages Area */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div 
-          ref={messagesContainerRef}
           onScroll={handleScroll}
           className="h-full overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10"
         >
-          {/* Loading indicator for pagination */}
-          {isLoadingMore && !displayConversation.isTemporary && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex justify-center mb-4"
-            >
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-            </motion.div>
+          {isLoadingMore && (
+            <div className="flex justify-center mb-4">
+              <Loading size="sm" />
+            </div>
           )}
 
           <div className="space-y-4">
             {/* Welcome message for temporary conversations */}
-            {displayConversation.isTemporary && messages.length === 0 && (
+            {currentConversation.isTemporary && messages.length === 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -320,11 +278,11 @@ const ChatWindow = () => {
               >
                 <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                   <span className="text-2xl font-bold text-white">
-                    {getInitials(getConversationName())}
+                    {getInitials(conversationInfo.name)}
                   </span>
                 </div>
                 <h3 className="text-xl font-semibold text-white mb-3">
-                  Start chatting with {getConversationName()}
+                  Start chatting with {conversationInfo.name}
                 </h3>
                 <p className="text-gray-300 text-sm max-w-md mx-auto leading-relaxed">
                   Send your first message to begin the conversation. Once you send a message, 
@@ -338,13 +296,43 @@ const ChatWindow = () => {
               </motion.div>
             )}
 
+            {/* Group welcome message for new groups */}
+            {currentConversation.type === 'group' && !currentConversation.isTemporary && messages.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center py-12"
+              >
+                <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
+                  <Users className="w-10 h-10 text-white" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-3">
+                  Welcome to {conversationInfo.name}
+                </h3>
+                <p className="text-gray-300 text-sm max-w-md mx-auto leading-relaxed mb-4">
+                  This is the beginning of your group conversation. 
+                  {currentConversation.participants?.length > 1 && 
+                    ` ${currentConversation.participants.length} members can see messages here.`
+                  }
+                </p>
+                <div className="flex justify-center space-x-4 text-xs">
+                  <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl px-3 py-2">
+                    <p className="text-purple-300">👥 Group Chat</p>
+                  </div>
+                  {userParticipant?.role === 'admin' && (
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-3 py-2">
+                      <p className="text-yellow-300">👑 You're an admin</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
             {/* Messages */}
             <AnimatePresence initial={false}>
               {messages.map((message, index) => {
                 const prevMessage = messages[index - 1];
-                const isGrouped = prevMessage && 
-                  prevMessage.sender?._id === message.sender?._id &&
-                  (new Date(message.createdAt) - new Date(prevMessage.createdAt)) < 300000;
+                const isGrouped = shouldGroupMessages(message, prevMessage);
 
                 return (
                   <MessageItem
@@ -352,17 +340,13 @@ const ChatWindow = () => {
                     message={message}
                     isGrouped={isGrouped}
                     isOwn={message.sender?._id === user?._id}
+                    showSenderName={currentConversation.type === 'group' && !isGrouped}
                   />
                 );
               })}
             </AnimatePresence>
 
-            {/* Typing Indicator */}
-            <TypingIndicator 
-              typingUsers={typingUsers} 
-              conversationId={displayConversationId}
-            />
-
+            <TypingIndicator conversationId={displayConversationId} />
             <div ref={messagesEndRef} />
           </div>
         </div>
@@ -372,6 +356,17 @@ const ChatWindow = () => {
       <div className="flex-shrink-0">
         <MessageInput conversationId={displayConversationId} />
       </div>
+
+      {/* GROUP SETTINGS MODAL */}
+      {currentConversation.type === 'group' && (
+        <GroupSettings
+          group={currentConversation}
+          isOpen={showGroupSettings}
+          onClose={() => setShowGroupSettings(false)}
+          onUpdate={handleGroupUpdate}
+          onDelete={handleGroupDeleted}
+        />
+      )}
     </div>
   );
 };

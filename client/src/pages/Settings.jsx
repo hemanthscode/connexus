@@ -1,3 +1,8 @@
+/**
+ * Settings Page Component
+ * App settings and preferences with enhanced components
+ */
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -10,26 +15,25 @@ import {
   Globe,
   Shield,
   HelpCircle,
-  LogOut,
-  Moon,
-  Volume2,
-  Eye
+  LogOut
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { ROUTES } from '../utils/constants';
+import Layout from '../components/ui/Layout';
 import Button from '../components/ui/Button';
-import Modal from '../components/ui/Modal';
+import { ConfirmModal } from '../components/ui/Modal';
 import toast from 'react-hot-toast';
 
 const Settings = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const handleLogout = async () => {
     try {
       await logout();
       toast.success('Logged out successfully');
-      navigate('/login');
+      navigate(ROUTES.LOGIN);
     } catch (error) {
       toast.error('Failed to logout');
     }
@@ -43,7 +47,7 @@ const Settings = () => {
           icon: User,
           label: 'Profile',
           description: 'Manage your profile information',
-          onClick: () => navigate('/profile'),
+          onClick: () => navigate(ROUTES.PROFILE),
         },
         {
           icon: Lock,
@@ -96,18 +100,16 @@ const Settings = () => {
   ];
 
   return (
-    <div className="h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900">
+    <Layout>
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5 backdrop-blur-sm">
         <div className="flex items-center space-x-4">
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate('/chat')}
-            className="p-2"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
+            onClick={() => navigate(ROUTES.CHAT)}
+            leftIcon={<ArrowLeft className="w-4 h-4" />}
+          />
           <h1 className="text-xl font-bold text-white">Settings</h1>
         </div>
       </div>
@@ -128,7 +130,7 @@ const Settings = () => {
               </div>
               
               <div className="divide-y divide-white/10">
-                {group.items.map((item, itemIndex) => {
+                {group.items.map((item) => {
                   const Icon = item.icon;
                   return (
                     <button
@@ -173,36 +175,22 @@ const Settings = () => {
         </div>
       </div>
 
-      {/* Logout Confirmation Modal */}
-      <Modal
+      {/* Logout Confirmation */}
+      <ConfirmModal
         isOpen={showLogoutConfirm}
         onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={handleLogout}
         title="Confirm Logout"
-        size="sm"
+        confirmText="Logout"
+        type="warning"
       >
         <div className="p-6">
-          <p className="text-gray-300 mb-6">
+          <p className="text-gray-300">
             Are you sure you want to logout? You'll need to sign in again to access your conversations.
           </p>
-          <div className="flex space-x-3">
-            <Button
-              variant="ghost"
-              onClick={() => setShowLogoutConfirm(false)}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleLogout}
-              className="flex-1"
-            >
-              Logout
-            </Button>
-          </div>
         </div>
-      </Modal>
-    </div>
+      </ConfirmModal>
+    </Layout>
   );
 };
 

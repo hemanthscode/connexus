@@ -41,11 +41,25 @@ export const updateProfile = async (req, res) => {
     const { error } = validateUpdateProfile(req.body);
     if (error) return res.status(400).json({ success: false, message: error.details[0].message });
 
-    const allowedFields = ['name', 'email', 'status', 'avatar', 'bio', 'location', 'socialLinks'];
+    // ADD PHONE TO ALLOWED FIELDS
+    const allowedFields = ['name', 'email', 'status', 'avatar', 'bio', 'location', 'phone', 'socialLinks'];
     const updateData = {};
+    
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) {
-        updateData[field] = typeof req.body[field] === 'string' ? req.body[field].trim() : req.body[field];
+        if (field === 'socialLinks') {
+          // Handle socialLinks Map field properly
+          updateData[field] = new Map();
+          if (typeof req.body[field] === 'object' && req.body[field] !== null) {
+            Object.entries(req.body[field]).forEach(([platform, url]) => {
+              if (url && typeof url === 'string' && url.trim()) {
+                updateData[field].set(platform.trim(), url.trim());
+              }
+            });
+          }
+        } else {
+          updateData[field] = typeof req.body[field] === 'string' ? req.body[field].trim() : req.body[field];
+        }
       }
     });
 

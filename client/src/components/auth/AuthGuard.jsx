@@ -1,5 +1,12 @@
+/**
+ * Authentication Guard Component
+ * Protects routes and handles auth state
+ */
+
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { ROUTES } from '../../utils/constants';
+import Layout from '../ui/Layout';
 import Loading from '../ui/Loading';
 
 const AuthGuard = ({ children }) => {
@@ -9,9 +16,11 @@ const AuthGuard = ({ children }) => {
   // Show loading while checking authentication
   if (!isInitialized || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-        <Loading size="lg" />
-      </div>
+      <Layout showConnectionStatus={false}>
+        <div className="min-h-screen flex items-center justify-center">
+          <Loading size="lg" text="Checking authentication..." />
+        </div>
+      </Layout>
     );
   }
 
@@ -19,7 +28,7 @@ const AuthGuard = ({ children }) => {
   if (!isAuthenticated) {
     return (
       <Navigate 
-        to="/login" 
+        to={ROUTES.LOGIN}
         state={{ from: location }} 
         replace 
       />

@@ -1,3 +1,8 @@
+/**
+ * Authentication Hook
+ * Handles auth state and navigation
+ */
+
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
@@ -7,6 +12,7 @@ export const useAuth = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
+  const authStore = useAuthStore();
   const {
     user,
     token,
@@ -14,54 +20,46 @@ export const useAuth = () => {
     isLoading,
     isInitialized,
     error,
+    checkAuth,
     register,
     login,
     logout,
-    checkAuth,
     changePassword,
-  } = useAuthStore();
+    updateProfile,
+  } = authStore;
 
-  // Check auth ONLY ONCE on mount
+  // Initialize auth check
   useEffect(() => {
-    if (!isInitialized) {
-      checkAuth();
-    }
-  }, [isInitialized]); // FIXED: Only depend on isInitialized
+    if (!isInitialized) checkAuth();
+  }, [isInitialized, checkAuth]);
 
-  // Redirect logic after authentication
-  const handleAuthSuccess = () => {
-    const from = location.state?.from?.pathname || ROUTES.CHAT;
-    navigate(from, { replace: true });
+  // Helper for auth success navigation
+  const navigateAfterAuth = () => {
+    const redirectTo = location.state?.from?.pathname || ROUTES.CHAT;
+    setTimeout(() => navigate(redirectTo, { replace: true }), 100);
   };
 
-  // Enhanced login with redirect
-  const handleLogin = async (credentials) => {
-    const result = await login(credentials);
-    if (result.success) {
-      // Small delay to ensure state is updated
-      setTimeout(() => {
-        handleAuthSuccess();
-      }, 100);
-    }
-    return result;
-  };
+  // Enhanced auth actions with navigation
+  const authActions = {
+    login: async (credentials) => {
+      const result = await login(credentials);
+      if (result.success) navigateAfterAuth();
+      return result;
+    },
 
-  // Enhanced register with redirect  
-  const handleRegister = async (userData) => {
-    const result = await register(userData);
-    if (result.success) {
-      // Small delay to ensure state is updated
-      setTimeout(() => {
-        handleAuthSuccess();
-      }, 100);
-    }
-    return result;
-  };
+    register: async (userData) => {
+      const result = await register(userData);
+      if (result.success) navigateAfterAuth();
+      return result;
+    },
 
-  // Enhanced logout with redirect
-  const handleLogout = async () => {
-    await logout();
-    navigate(ROUTES.LOGIN, { replace: true });
+    logout: async () => {
+      await logout();
+      navigate(ROUTES.LOGIN, { replace: true });
+    },
+
+    changePassword,
+    updateProfile,
   };
 
   return {
@@ -74,9 +72,8 @@ export const useAuth = () => {
     error,
     
     // Actions
-    login: handleLogin,
-    register: handleRegister,
-    logout: handleLogout,
-    changePassword,
+    ...authActions,
   };
 };
+
+export default useAuth;

@@ -17,7 +17,7 @@ import ReactionModal from './ReactionModal';
 
 const EMOJI_OPTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡', '👏', '🙏'];
 
-const MessageItem = ({ message, isGrouped, isOwn }) => {
+const MessageItem = ({ message, isGrouped, isOwn, isHighlighted, onScrollToMessage }) => {
   const [showActions, setShowActions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showReactionModal, setShowReactionModal] = useState(false);
@@ -87,6 +87,13 @@ const MessageItem = ({ message, isGrouped, isOwn }) => {
     setShowActions(false);
   };
 
+  // FIXED: Handle click on reply indicator to scroll to original message
+  const handleReplyClick = () => {
+    if (message.replyTo?._id && onScrollToMessage) {
+      onScrollToMessage(message.replyTo._id);
+    }
+  };
+
   // Enhanced reaction handling with optimistic updates
   const handleReaction = async (emoji) => {
     try {
@@ -141,10 +148,10 @@ const MessageItem = ({ message, isGrouped, isOwn }) => {
                 exit={{ scale: 0.8, opacity: 0 }}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={handleReactionClick} // Click to show modal
+                onClick={handleReactionClick}
                 onContextMenu={(e) => {
                   e.preventDefault();
-                  handleReaction(emoji); // Right-click to toggle
+                  handleReaction(emoji);
                 }}
                 className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs transition-all duration-200 cursor-pointer ${
                   hasUserReacted 
@@ -211,12 +218,19 @@ const MessageItem = ({ message, isGrouped, isOwn }) => {
       <motion.div
         key={message._id}
         initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+        animate={{ 
+          opacity: 1, 
+          y: 0,
+          backgroundColor: isHighlighted ? 'rgba(59, 130, 246, 0.1)' : 'transparent'
+        }}
         exit={{ opacity: 0, y: -20 }}
         layout
-        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isGrouped ? 'mt-1' : 'mt-4'}`}
+        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isGrouped ? 'mt-1' : 'mt-4'} transition-all duration-500 rounded-lg ${
+          isHighlighted ? 'ring-2 ring-blue-400/50' : ''
+        }`}
         onMouseEnter={() => setShowActions(true)}
         onMouseLeave={() => setShowActions(false)}
+        data-message-id={message._id} // For scrolling reference
       >
         <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} items-end space-x-2 ${isOwn ? 'space-x-reverse' : ''} max-w-xs lg:max-w-md`}>
           {/* Avatar */}
@@ -324,16 +338,22 @@ const MessageItem = ({ message, isGrouped, isOwn }) => {
                 : 'bg-white/10 text-white'
             } ${isGrouped ? 'rounded-tl-md' : ''}`}>
               
-              {/* Reply indicator */}
+              {/* FIXED: Clickable Reply indicator */}
               {message.replyTo && (
-                <div className="mb-2 p-2 bg-black/20 rounded-lg border-l-2 border-blue-400">
+                <motion.div 
+                  className="mb-2 p-2 bg-black/20 rounded-lg border-l-2 border-blue-400 cursor-pointer hover:bg-black/30 transition-colors"
+                  onClick={handleReplyClick}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  title="Click to jump to replied message"
+                >
                   <p className="text-xs text-gray-300 mb-1">
                     Replying to {message.replyTo.sender?.name || 'Unknown'}
                   </p>
                   <p className="text-sm text-gray-200 truncate">
                     {message.replyTo.content}
                   </p>
-                </div>
+                </motion.div>
               )}
 
               {/* Sender name for group chats */}
