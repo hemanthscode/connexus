@@ -12,7 +12,7 @@ const validateURL = (url) => {
   }
 };
 
-// Helper function to validate phone number [web:101]
+// Helper function to validate phone number
 const validatePhone = (phone) => {
   if (!phone) return true; // Allow empty phone numbers
   // Supports formats: +1234567890, 123-456-7890, (123) 456-7890, 1234567890

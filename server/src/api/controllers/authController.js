@@ -5,6 +5,8 @@ import {
   logoutUser,
 } from '../services/authService.js';
 import { validateRegister, validateLogin, validateChangePassword } from '../validations/authValidation.js';
+import { sendSuccess, sendValidationError, sendServiceError } from '../utils/responseHelper.js';
+import { SUCCESS_MESSAGES, ERROR_MESSAGES, STATUS_CODES } from '../constants/index.js';
 
 /**
  * Register a new user
@@ -12,18 +14,14 @@ import { validateRegister, validateLogin, validateChangePassword } from '../vali
 export const register = async (req, res) => {
   try {
     const { error } = validateRegister(req.body);
-    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    if (error) return sendValidationError(res, error);
 
     const { name, email, password } = req.body;
     const tokenResponse = await registerUser({ name, email, password });
 
-    res.status(201).json({ success: true, message: 'User registered successfully', data: tokenResponse });
+    sendSuccess(res, SUCCESS_MESSAGES.USER_REGISTERED, tokenResponse, STATUS_CODES.CREATED);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 400) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-    res.status(500).json({ success: false, message: 'Server error during registration' });
+    sendServiceError(res, error, ERROR_MESSAGES.SERVER_ERROR_REGISTRATION);
   }
 };
 
@@ -33,18 +31,14 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { error } = validateLogin(req.body);
-    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    if (error) return sendValidationError(res, error);
 
     const { email, password } = req.body;
     const tokenResponse = await loginUser({ email, password });
 
-    res.status(200).json({ success: true, message: 'Login successful', data: tokenResponse });
+    sendSuccess(res, SUCCESS_MESSAGES.LOGIN_SUCCESSFUL, tokenResponse);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 401) {
-      return res.status(401).json({ success: false, message: error.message });
-    }
-    res.status(500).json({ success: false, message: 'Server error during login' });
+    sendServiceError(res, error, ERROR_MESSAGES.SERVER_ERROR_LOGIN);
   }
 };
 
@@ -54,18 +48,14 @@ export const login = async (req, res) => {
 export const changePassword = async (req, res) => {
   try {
     const { error } = validateChangePassword(req.body);
-    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    if (error) return sendValidationError(res, error);
 
     const { currentPassword, newPassword } = req.body;
     await changeUserPassword(req.user._id, currentPassword, newPassword);
 
-    res.status(200).json({ success: true, message: 'Password changed successfully' });
+    sendSuccess(res, SUCCESS_MESSAGES.PASSWORD_CHANGED);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 401 || error.statusCode === 404) {
-      return res.status(error.statusCode).json({ success: false, message: error.message });
-    }
-    res.status(500).json({ success: false, message: 'Server error changing password' });
+    sendServiceError(res, error, ERROR_MESSAGES.SERVER_ERROR_PASSWORD);
   }
 };
 
@@ -75,10 +65,9 @@ export const changePassword = async (req, res) => {
 export const logout = async (req, res) => {
   try {
     await logoutUser(req.user._id);
-    res.status(200).json({ success: true, message: 'Logged out successfully' });
+    sendSuccess(res, SUCCESS_MESSAGES.LOGGED_OUT);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error during logout' });
+    sendServiceError(res, error, ERROR_MESSAGES.SERVER_ERROR_LOGOUT);
   }
 };
 

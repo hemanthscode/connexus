@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import { generateTokenResponse } from '../utils/generateToken.js';
+import { ERROR_MESSAGES } from '../constants/index.js';
 
 /**
  * Registers a new user.
@@ -9,7 +10,7 @@ import { generateTokenResponse } from '../utils/generateToken.js';
 export const registerUser = async ({ name, email, password }) => {
   const existingUser = await User.findOne({ email: email.trim().toLowerCase() });
   if (existingUser) {
-    const error = new Error('Email already registered');
+    const error = new Error(ERROR_MESSAGES.EMAIL_EXISTS);
     error.statusCode = 400;
     throw error;
   }
@@ -29,14 +30,14 @@ export const registerUser = async ({ name, email, password }) => {
 export const loginUser = async ({ email, password }) => {
   const user = await User.findOne({ email: email.trim().toLowerCase() }).select('+password');
   if (!user || !user.isActive) {
-    const error = new Error('Invalid credentials');
+    const error = new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
     error.statusCode = 401;
     throw error;
   }
 
   const isMatch = await user.matchPassword(password);
   if (!isMatch) {
-    const error = new Error('Invalid credentials');
+    const error = new Error(ERROR_MESSAGES.INVALID_CREDENTIALS);
     error.statusCode = 401;
     throw error;
   }
@@ -53,14 +54,14 @@ export const loginUser = async ({ email, password }) => {
 export const changeUserPassword = async (userId, currentPassword, newPassword) => {
   const user = await User.findById(userId).select('+password');
   if (!user) {
-    const error = new Error('User not found');
+    const error = new Error(ERROR_MESSAGES.USER_NOT_FOUND);
     error.statusCode = 404;
     throw error;
   }
 
   const match = await user.matchPassword(currentPassword);
   if (!match) {
-    const error = new Error('Current password incorrect');
+    const error = new Error(ERROR_MESSAGES.CURRENT_PASSWORD_INCORRECT);
     error.statusCode = 401;
     throw error;
   }

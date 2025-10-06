@@ -33,6 +33,7 @@ export const handleConnection = (io) => async (socket) => {
   const onlineUsersArray = Array.from(connectedUsers.keys()).map((uid) => ({ userId: uid }));
   socket.emit('current_online_users', onlineUsersArray);
 
+  // Socket event handlers
   socket.on('join_conversation', async (conversationId) => {
     try {
       if (!conversationId) {
@@ -64,7 +65,6 @@ export const handleConnection = (io) => async (socket) => {
     socket.emit('left_conversation', { conversationId });
   });
 
-  // FIXED: Send message handler with confirmation
   socket.on('send_message', async (data) => {
     try {
       const { conversationId, content, type = 'text', replyTo = null, attachments = [], tempId } = data;
@@ -107,16 +107,14 @@ export const handleConnection = (io) => async (socket) => {
 
       await convo.updateLastMessage(content.trim(), socket.userId);
 
-      // FIXED: Send to others (excluding sender)
       socket.to(conversationId).emit('new_message', { 
         message: message.toObject(), 
         conversationId 
       });
       
-      // FIXED: Send confirmation back to sender with tempId for matching
       socket.emit('message_sent', { 
         message: message.toObject(),
-        tempId: tempId, // For replacing optimistic message
+        tempId: tempId,
         conversationId
       });
 
@@ -257,48 +255,6 @@ export const handleConnection = (io) => async (socket) => {
     }
   });
 
-  socket.on('join_group', async ({ groupId }) => {
-    try {
-      const { default: Conversation } = await import('../models/Conversation.js');
-      const group = await Conversation.findById(groupId);
-      
-      if (!group || group.type !== 'group') {
-        return socket.emit('error', { message: 'Group not found' });
-      }
-      
-      if (!group.hasParticipant(socket.userId)) {
-        return socket.emit('error', { message: 'Not a member of this group' });
-      }
-      
-      socket.join(groupId);
-      socket.to(groupId).emit('user_joined_group', {
-        userId: socket.userId,
-        user: {
-          _id: socket.userId,
-          name: socket.user?.name || 'Unknown',
-          avatar: socket.user?.avatar || null
-        },
-        groupId,
-      });
-    } catch (err) {
-      console.error('join_group error', err);
-      socket.emit('error', { message: 'Failed to join group' });
-    }
-  });
-
-  socket.on('leave_group', async ({ groupId }) => {
-    try {
-      socket.leave(groupId);
-      socket.to(groupId).emit('user_left_group', {
-        userId: socket.userId,
-        groupId,
-      });
-    } catch (err) {
-      console.error('leave_group error', err);
-      socket.emit('error', { message: 'Failed to leave group' });
-    }
-  });
-
   socket.on('update_user_status', async ({ status }) => {
     try {
       if (!['online', 'away', 'offline'].includes(status)) {
@@ -314,28 +270,6 @@ export const handleConnection = (io) => async (socket) => {
     } catch (err) {
       console.error('update_user_status error', err);
       socket.emit('error', { message: 'Failed to update status' });
-    }
-  });
-
-  socket.on('request_conversation_info', async ({ conversationId }) => {
-    try {
-      if (!conversationId) return;
-
-      const { default: Conversation } = await import('../models/Conversation.js');
-      const conversation = await Conversation.findById(conversationId)
-        .populate('participants.user', 'name email avatar status lastSeen')
-        .populate('lastMessage.sender', 'name avatar');
-        
-      if (!conversation) return;
-      
-      if (!conversation.hasParticipant(socket.userId)) return;
-      
-      socket.emit('conversation_info', {
-        conversationId,
-        conversation: conversation.toObject(),
-      });
-    } catch (err) {
-      console.error('request_conversation_info error', err);
     }
   });
 
@@ -371,26 +305,9 @@ export const handleConnection = (io) => async (socket) => {
   });
 };
 
-/**
- * Get currently connected users count
- */
-export const getConnectedUsersCount = () => {
-  return connectedUsers.size;
-};
-
-/**
- * Get connected users list
- */
-export const getConnectedUsers = () => {
-  return Array.from(connectedUsers.keys());
-};
-
-/**
- * Check if user is online
- */
-export const isUserOnline = (userId) => {
-  return connectedUsers.has(userId.toString());
-};
+export const getConnectedUsersCount = () => connectedUsers.size;
+export const getConnectedUsers = () => Array.from(connectedUsers.keys());
+export const isUserOnline = (userId) => connectedUsers.has(userId.toString());
 
 export default { 
   handleConnection, 

@@ -2,13 +2,15 @@ import mongoose from 'mongoose';
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
+import { findUserActiveConversations, findConversationMessages } from '../utils/dbHelpers.js';
+import { ERROR_MESSAGES } from '../constants/index.js';
 
 /**
  * Get all active conversations for a user (excluding archived),
  * with unread counts.
  */
 export const getUserConversations = async (userId) => {
-  const conversations = await Conversation.findUserConversations(userId);
+  const conversations = await findUserActiveConversations(Conversation, userId);
 
   return Promise.all(
     conversations.map(async (conv) => {
@@ -29,41 +31,16 @@ export const getUserConversations = async (userId) => {
 
 /**
  * Get messages for a conversation with pagination.
- * FIXED: Populate reaction user details
- */
-/**
- * Get messages for a conversation with pagination.
- * FIXED: Enhanced population including replyTo.sender
  */
 export const getConversationMessages = async (conversationId, userId, { page = 1, limit = 50 }) => {
   const convo = await Conversation.findById(conversationId);
   if (!convo || !convo.hasParticipant(userId) || convo.settings.archived) {
-    const error = new Error('Unauthorized or conversation archived');
+    const error = new Error(ERROR_MESSAGES.UNAUTHORIZED_ARCHIVED);
     error.statusCode = 403;
     throw error;
   }
 
-  // FIXED: Direct query with proper nested population instead of static method
-  const skip = (page - 1) * limit;
-  
-  const messages = await Message.find({ 
-    conversation: conversationId,
-    isDeleted: false 
-  })
-    .populate('sender', 'name email avatar')
-    .populate({
-      path: 'replyTo',
-      populate: {
-        path: 'sender',
-        select: 'name email avatar'
-      }
-    })
-    .populate('reactions.user', 'name email avatar')
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .lean();
-
+  const messages = await findConversationMessages(Message, conversationId, page, limit);
   return messages.reverse();
 };
 
@@ -74,7 +51,7 @@ export const getConversationMessages = async (conversationId, userId, { page = 1
 export const sendMessage = async (conversationId, userId, content, type = 'text', replyTo = null, attachments = []) => {
   const convo = await Conversation.findById(conversationId);
   if (!convo || !convo.hasParticipant(userId) || convo.settings.archived) {
-    const error = new Error('Unauthorized or conversation archived');
+    const error = new Error(ERROR_MESSAGES.UNAUTHORIZED_ARCHIVED);
     error.statusCode = 403;
     throw error;
   }
@@ -84,7 +61,7 @@ export const sendMessage = async (conversationId, userId, content, type = 'text'
     if (otherParticipantId) {
       const otherUser = await User.findById(otherParticipantId);
       if (otherUser.blockedUsers.includes(userId)) {
-        const error = new Error('You are blocked by the recipient');
+        const error = new Error(ERROR_MESSAGES.BLOCKED_BY_RECIPIENT);
         error.statusCode = 403;
         throw error;
       }
@@ -111,9 +88,9 @@ export const sendMessage = async (conversationId, userId, content, type = 'text'
  */
 export const editMessage = async (messageId, userId, newContent) => {
   const message = await Message.findById(messageId);
-  if (!message) throw new Error('Message not found');
+  if (!message) throw new Error(ERROR_MESSAGES.MESSAGE_NOT_FOUND);
   if (message.sender.toString() !== userId.toString()) {
-    const error = new Error('Unauthorized to edit');
+    const error = new Error(ERROR_MESSAGES.UNAUTHORIZED_EDIT);
     error.statusCode = 403;
     throw error;
   }
@@ -126,17 +103,17 @@ export const editMessage = async (messageId, userId, newContent) => {
  */
 export const softDeleteMessage = async (messageId, userId) => {
   const message = await Message.findById(messageId);
-  if (!message) throw new Error('Message not found');
+  if (!message) throw new Error(ERROR_MESSAGES.MESSAGE_NOT_FOUND);
   const convo = await Conversation.findById(message.conversation);
 
-  if (!convo) throw new Error('Conversation not found');
+  if (!convo) throw new Error(ERROR_MESSAGES.CONVERSATION_NOT_FOUND);
 
   const isSender = message.sender.toString() === userId.toString();
   const participant = convo.getParticipant(userId);
   const isAdmin = participant?.role === 'admin';
 
   if (!isSender && !isAdmin) {
-    const error = new Error('Unauthorized to delete message');
+    const error = new Error(ERROR_MESSAGES.UNAUTHORIZED_DELETE);
     error.statusCode = 403;
     throw error;
   }
@@ -146,30 +123,24 @@ export const softDeleteMessage = async (messageId, userId) => {
 
 /**
  * Add reaction emoji to a message.
- * FIXED: Return populated message with user details
  */
 export const addReactionToMessage = async (messageId, userId, emoji) => {
   const message = await Message.findById(messageId);
-  if (!message) throw new Error('Message not found');
+  if (!message) throw new Error(ERROR_MESSAGES.MESSAGE_NOT_FOUND);
   
   await message.addReaction(userId, emoji);
-  
-  // FIXED: Populate reaction user details before returning
   await message.populate('reactions.user', 'name email avatar');
   return message;
 };
 
 /**
  * Remove reaction emoji from a message.
- * FIXED: Return populated message with user details
  */
 export const removeReactionFromMessage = async (messageId, userId, emoji) => {
   const message = await Message.findById(messageId);
-  if (!message) throw new Error('Message not found');
+  if (!message) throw new Error(ERROR_MESSAGES.MESSAGE_NOT_FOUND);
   
   await message.removeReaction(userId, emoji);
-  
-  // FIXED: Populate reaction user details before returning
   await message.populate('reactions.user', 'name email avatar');
   return message;
 };
@@ -180,7 +151,7 @@ export const removeReactionFromMessage = async (messageId, userId, emoji) => {
 export const markConversationAsRead = async (conversationId, userId) => {
   const convo = await Conversation.findById(conversationId);
   if (!convo || !convo.hasParticipant(userId)) {
-    const error = new Error('Unauthorized');
+    const error = new Error(ERROR_MESSAGES.UNAUTHORIZED);
     error.statusCode = 403;
     throw error;
   }
@@ -202,7 +173,6 @@ export const markConversationAsRead = async (conversationId, userId) => {
 
 /**
  * Create or get a direct conversation between two users.
- * Throws 404 if other user not found.
  */
 export const createOrGetDirectConversation = async (userId, participantId) => {
   if (userId.toString() === participantId.toString()) {
@@ -213,12 +183,12 @@ export const createOrGetDirectConversation = async (userId, participantId) => {
 
   const participant = await User.findById(participantId).select('_id name email avatar isActive');
   if (!participant || !participant.isActive) {
-    const error = new Error('User not found or inactive');
+    const error = new Error(ERROR_MESSAGES.USER_NOT_FOUND);
     error.statusCode = 404;
     throw error;
   }
 
-  // Find existing direct conversation between these two users
+  // Find existing direct conversation
   const existing = await Conversation.findOne({
     type: 'direct',
     isActive: true,
@@ -228,9 +198,7 @@ export const createOrGetDirectConversation = async (userId, participantId) => {
     ]
   }).populate('participants.user', 'name email avatar status lastSeen');
 
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
   // Create new direct conversation
   const convo = new Conversation({
@@ -250,7 +218,6 @@ export const createOrGetDirectConversation = async (userId, participantId) => {
   
   await convo.save();
   await convo.populate('participants.user', 'name email avatar status lastSeen');
-  
   return convo;
 };
 
@@ -258,7 +225,7 @@ export const createOrGetDirectConversation = async (userId, participantId) => {
  * Create group conversation
  */
 export const createGroupConversation = async (creatorId, name, description, participants = [], avatar = null) => {
-  if (!name || name.trim().length === 0) throw new Error('Group name required');
+  if (!name || name.trim().length === 0) throw new Error(ERROR_MESSAGES.GROUP_NAME_REQUIRED);
 
   const participantList = [{ user: creatorId, role: 'admin' }];
   for (const userId of participants) {
@@ -283,15 +250,14 @@ export const createGroupConversation = async (creatorId, name, description, part
 
 /**
  * Update group info: name, description, avatar
- * Only admin/moderator allowed
  */
 export const updateGroupInfo = async (conversationId, userId, updateFields) => {
   const convo = await Conversation.findById(conversationId);
-  if (!convo || convo.type !== 'group') throw new Error('Group conversation not found');
+  if (!convo || convo.type !== 'group') throw new Error(ERROR_MESSAGES.GROUP_NOT_FOUND);
 
   const participant = convo.getParticipant(userId);
   if (!participant || !['admin', 'moderator'].includes(participant.role)) {
-    const error = new Error('Not authorized to update group settings');
+    const error = new Error(ERROR_MESSAGES.NOT_AUTHORIZED_UPDATE);
     error.statusCode = 403;
     throw error;
   }
@@ -305,15 +271,15 @@ export const updateGroupInfo = async (conversationId, userId, updateFields) => {
 };
 
 /**
- * Add participant(s) to group (admin/moderator only)
+ * Add participant(s) to group
  */
 export const addParticipantsToGroup = async (conversationId, userId, newUserIds = []) => {
   const convo = await Conversation.findById(conversationId);
-  if (!convo || convo.type !== 'group') throw new Error('Group conversation not found');
+  if (!convo || convo.type !== 'group') throw new Error(ERROR_MESSAGES.GROUP_NOT_FOUND);
 
   const participant = convo.getParticipant(userId);
   if (!participant || !['admin', 'moderator'].includes(participant.role)) {
-    const error = new Error('Not authorized to add participants');
+    const error = new Error(ERROR_MESSAGES.NOT_AUTHORIZED_ADD);
     error.statusCode = 403;
     throw error;
   }
@@ -329,21 +295,21 @@ export const addParticipantsToGroup = async (conversationId, userId, newUserIds 
 };
 
 /**
- * Remove participant from group (admin/moderator only or self)
+ * Remove participant from group
  */
 export const removeParticipantFromGroup = async (conversationId, removerId, removeeId) => {
   const convo = await Conversation.findById(conversationId);
-  if (!convo || convo.type !== 'group') throw new Error('Group conversation not found');
+  if (!convo || convo.type !== 'group') throw new Error(ERROR_MESSAGES.GROUP_NOT_FOUND);
 
   const remover = convo.getParticipant(removerId);
   if (!remover) {
-    const error = new Error('Unauthorized');
+    const error = new Error(ERROR_MESSAGES.UNAUTHORIZED);
     error.statusCode = 403;
     throw error;
   }
 
   if (removerId.toString() !== removeeId.toString() && !['admin', 'moderator'].includes(remover.role)) {
-    const error = new Error('Not authorized to remove participant');
+    const error = new Error(ERROR_MESSAGES.NOT_AUTHORIZED_REMOVE);
     error.statusCode = 403;
     throw error;
   }
@@ -353,15 +319,15 @@ export const removeParticipantFromGroup = async (conversationId, removerId, remo
 };
 
 /**
- * Change participant role (admin only)
+ * Change participant role
  */
 export const changeParticipantRole = async (conversationId, adminId, participantId, newRole) => {
   const convo = await Conversation.findById(conversationId);
-  if (!convo || convo.type !== 'group') throw new Error('Group conversation not found');
+  if (!convo || convo.type !== 'group') throw new Error(ERROR_MESSAGES.GROUP_NOT_FOUND);
 
   const admin = convo.getParticipant(adminId);
   if (!admin || admin.role !== 'admin') {
-    const error = new Error('Only admin can change roles');
+    const error = new Error(ERROR_MESSAGES.ONLY_ADMIN_CHANGE_ROLES);
     error.statusCode = 403;
     throw error;
   }
@@ -375,10 +341,10 @@ export const changeParticipantRole = async (conversationId, adminId, participant
  */
 export const setConversationArchivedStatus = async (conversationId, userId, archived) => {
   const convo = await Conversation.findById(conversationId);
-  if (!convo) throw new Error('Conversation not found');
+  if (!convo) throw new Error(ERROR_MESSAGES.CONVERSATION_NOT_FOUND);
   const participant = convo.getParticipant(userId);
   if (!participant) {
-    const error = new Error('Unauthorized');
+    const error = new Error(ERROR_MESSAGES.UNAUTHORIZED);
     error.statusCode = 403;
     throw error;
   }
@@ -388,26 +354,7 @@ export const setConversationArchivedStatus = async (conversationId, userId, arch
   return convo;
 };
 
-/**
- * Search active users excluding requester.
- */
-export const searchActiveUsers = async (query, userId) => {
-  if (!query || query.length < 2) {
-    const error = new Error('Query too short');
-    error.statusCode = 400;
-    throw error;
-  }
-
-  const users = await User.find({
-    _id: { $ne: userId },
-    isActive: true,
-    $or: [{ name: { $regex: query, $options: 'i' } }, { email: { $regex: query, $options: 'i' } }],
-  })
-    .select('name email avatar status')
-    .limit(10);
-
-  return users;
-};
+// REMOVED: searchActiveUsers function (moved to userService.js to avoid duplication)
 
 export default {
   getUserConversations,
@@ -425,5 +372,4 @@ export default {
   removeParticipantFromGroup,
   changeParticipantRole,
   setConversationArchivedStatus,
-  searchActiveUsers,
 };

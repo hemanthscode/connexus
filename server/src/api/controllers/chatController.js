@@ -13,10 +13,13 @@ import {
   softDeleteMessage,
   addReactionToMessage,
   removeReactionFromMessage,
-  searchActiveUsers,
   setConversationArchivedStatus,
 } from '../services/chatService.js';
+import { searchUsers as searchUsersService } from '../services/userService.js'; // FIXED: Renamed to avoid collision
 import { validateSendMessage, validateEditMessage } from '../validations/chatValidation.js';
+import { sendSuccess, sendError, sendValidationError, sendServiceError } from '../utils/responseHelper.js';
+import { SUCCESS_MESSAGES, ERROR_MESSAGES, STATUS_CODES } from '../constants/index.js';
+import { formatReactions } from '../utils/dbHelpers.js';
 
 /**
  * Get conversations for the authenticated user
@@ -24,10 +27,9 @@ import { validateSendMessage, validateEditMessage } from '../validations/chatVal
 export const getConversations = async (req, res) => {
   try {
     const conversations = await getUserConversations(req.user._id);
-    res.json({ success: true, data: conversations });
+    sendSuccess(res, 'Conversations retrieved', conversations);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Fetching conversations failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.FETCHING_CONVERSATIONS_FAILED);
   }
 };
 
@@ -40,13 +42,12 @@ export const getMessages = async (req, res) => {
     const limit = Math.min(100, parseInt(req.query.limit, 10) || 50);
 
     const messages = await getConversationMessages(req.params.id, req.user._id, { page, limit });
-    res.json({ success: true, data: messages });
+    sendSuccess(res, 'Messages retrieved', messages);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 403) {
-      return res.status(403).json({ success: false, message: 'Unauthorized or conversation archived' });
+    if (error.statusCode === STATUS_CODES.FORBIDDEN) {
+      return sendError(res, ERROR_MESSAGES.UNAUTHORIZED_ARCHIVED, STATUS_CODES.FORBIDDEN);
     }
-    res.status(500).json({ success: false, message: 'Fetching messages failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.FETCHING_MESSAGES_FAILED);
   }
 };
 
@@ -56,7 +57,7 @@ export const getMessages = async (req, res) => {
 export const sendMessageController = async (req, res) => {
   try {
     const { error } = validateSendMessage(req.body);
-    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    if (error) return sendValidationError(res, error);
 
     const { conversationId, content, type = 'text', replyTo = null, attachments = [] } = req.body;
 
@@ -70,13 +71,12 @@ export const sendMessageController = async (req, res) => {
     );
     await message.populate('sender', 'name email avatar');
 
-    res.status(201).json({ success: true, message: 'Message sent', data: message });
+    sendSuccess(res, SUCCESS_MESSAGES.MESSAGE_SENT, message, STATUS_CODES.CREATED);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 403) {
-      return res.status(403).json({ success: false, message: error.message });
+    if (error.statusCode === STATUS_CODES.FORBIDDEN) {
+      return sendError(res, error.message, STATUS_CODES.FORBIDDEN);
     }
-    res.status(500).json({ success: false, message: 'Sending message failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.SENDING_MESSAGE_FAILED);
   }
 };
 
@@ -86,17 +86,16 @@ export const sendMessageController = async (req, res) => {
 export const editMessageController = async (req, res) => {
   try {
     const { error } = validateEditMessage(req.body);
-    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    if (error) return sendValidationError(res, error);
 
     const { messageId, newContent } = req.body;
     const updatedMessage = await editMessage(messageId, req.user._id, newContent.trim());
-    res.json({ success: true, data: updatedMessage });
+    sendSuccess(res, 'Message updated', updatedMessage);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 403) {
-      return res.status(403).json({ success: false, message: 'Unauthorized to edit message' });
+    if (error.statusCode === STATUS_CODES.FORBIDDEN) {
+      return sendError(res, ERROR_MESSAGES.UNAUTHORIZED_EDIT, STATUS_CODES.FORBIDDEN);
     }
-    res.status(500).json({ success: false, message: 'Editing message failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.EDITING_MESSAGE_FAILED);
   }
 };
 
@@ -107,93 +106,58 @@ export const deleteMessageController = async (req, res) => {
   try {
     const { messageId } = req.params;
     await softDeleteMessage(messageId, req.user._id);
-    res.json({ success: true, message: 'Message deleted' });
+    sendSuccess(res, SUCCESS_MESSAGES.MESSAGE_DELETED);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 403) {
-      return res.status(403).json({ success: false, message: 'Unauthorized to delete message' });
+    if (error.statusCode === STATUS_CODES.FORBIDDEN) {
+      return sendError(res, ERROR_MESSAGES.UNAUTHORIZED_DELETE, STATUS_CODES.FORBIDDEN);
     }
-    res.status(500).json({ success: false, message: 'Deleting message failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.DELETING_MESSAGE_FAILED);
   }
 };
 
 /**
  * Add reaction to a message
- * FIXED: Return properly formatted reaction data with user details
  */
 export const addReactionController = async (req, res) => {
   try {
     const { messageId, emoji } = req.body;
     
     if (!messageId || !emoji) {
-      return res.status(400).json({ success: false, message: 'messageId and emoji are required' });
+      return sendError(res, 'messageId and emoji are required', STATUS_CODES.BAD_REQUEST);
     }
 
     const message = await addReactionToMessage(messageId, req.user._id, emoji);
+    const formattedReactions = formatReactions(message.reactions);
     
-    // FIXED: Format reactions with complete user details for frontend
-    const formattedReactions = message.reactions.map(reaction => ({
-      emoji: reaction.emoji,
-      user: reaction.user._id,
-      userDetails: {
-        _id: reaction.user._id,
-        name: reaction.user.name,
-        email: reaction.user.email,
-        avatar: reaction.user.avatar
-      },
-      reactedAt: reaction.timestamp
-    }));
-    
-    res.json({ 
-      success: true, 
-      data: {
-        messageId: message._id,
-        reactions: formattedReactions
-      }
+    sendSuccess(res, 'Reaction added', {
+      messageId: message._id,
+      reactions: formattedReactions
     });
   } catch (error) {
-    console.error('Add reaction error:', error);
-    res.status(500).json({ success: false, message: 'Adding reaction failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.ADDING_REACTION_FAILED);
   }
 };
 
 /**
  * Remove reaction from a message  
- * FIXED: Return properly formatted reaction data with user details
  */
 export const removeReactionController = async (req, res) => {
   try {
     const { messageId, emoji } = req.body;
     
     if (!messageId || !emoji) {
-      return res.status(400).json({ success: false, message: 'messageId and emoji are required' });
+      return sendError(res, 'messageId and emoji are required', STATUS_CODES.BAD_REQUEST);
     }
 
     const message = await removeReactionFromMessage(messageId, req.user._id, emoji);
+    const formattedReactions = formatReactions(message.reactions);
     
-    // FIXED: Format reactions with complete user details for frontend  
-    const formattedReactions = message.reactions.map(reaction => ({
-      emoji: reaction.emoji,
-      user: reaction.user._id,
-      userDetails: {
-        _id: reaction.user._id,
-        name: reaction.user.name,
-        email: reaction.user.email,
-        avatar: reaction.user.avatar
-      },
-      reactedAt: reaction.timestamp
-    }));
-    
-    res.json({ 
-      success: true, 
-      data: {
-        messageId: message._id,
-        reactions: formattedReactions
-      }
+    sendSuccess(res, 'Reaction removed', {
+      messageId: message._id,
+      reactions: formattedReactions
     });
   } catch (error) {
-    console.error('Remove reaction error:', error);
-    res.status(500).json({ success: false, message: 'Removing reaction failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.REMOVING_REACTION_FAILED);
   }
 };
 
@@ -203,13 +167,12 @@ export const removeReactionController = async (req, res) => {
 export const markAsRead = async (req, res) => {
   try {
     await markConversationAsRead(req.params.id, req.user._id);
-    res.json({ success: true, message: 'Marked as read' });
+    sendSuccess(res, SUCCESS_MESSAGES.MARKED_AS_READ);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 403) {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    if (error.statusCode === STATUS_CODES.FORBIDDEN) {
+      return sendError(res, ERROR_MESSAGES.UNAUTHORIZED, STATUS_CODES.FORBIDDEN);
     }
-    res.status(500).json({ success: false, message: 'Mark as read failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.MARK_READ_FAILED);
   }
 };
 
@@ -219,11 +182,9 @@ export const markAsRead = async (req, res) => {
 export const createDirectConversation = async (req, res) => {
   try {
     const convo = await createOrGetDirectConversation(req.user._id, req.body.participantId);
-    res.status(201).json({ success: true, data: convo });
+    sendSuccess(res, 'Conversation ready', convo, STATUS_CODES.CREATED);
   } catch (error) {
-    console.error(error);
-    const status = error.statusCode || 500;
-    res.status(status).json({ success: false, message: error.message || 'Creation failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.CREATION_FAILED);
   }
 };
 
@@ -234,10 +195,9 @@ export const createGroup = async (req, res) => {
   try {
     const { name, description, participants = [], avatar = null } = req.body;
     const group = await createGroupConversation(req.user._id, name, description, participants, avatar);
-    res.status(201).json({ success: true, data: group });
+    sendSuccess(res, 'Group created', group, STATUS_CODES.CREATED);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Group creation failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.GROUP_CREATION_FAILED);
   }
 };
 
@@ -248,11 +208,9 @@ export const updateGroup = async (req, res) => {
   try {
     const { name, description, avatar } = req.body;
     const updatedGroup = await updateGroupInfo(req.params.id, req.user._id, { name, description, avatar });
-    res.json({ success: true, data: updatedGroup });
+    sendSuccess(res, 'Group updated', updatedGroup);
   } catch (error) {
-    console.error(error);
-    const status = error.statusCode || 500;
-    res.status(status).json({ success: false, message: error.message || 'Group update failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.GROUP_UPDATE_FAILED);
   }
 };
 
@@ -263,14 +221,12 @@ export const addGroupParticipants = async (req, res) => {
   try {
     const { participants } = req.body;
     if (!Array.isArray(participants) || participants.length === 0) {
-      return res.status(400).json({ success: false, message: 'Participants array required' });
+      return sendError(res, 'Participants array required', STATUS_CODES.BAD_REQUEST);
     }
     const updatedGroup = await addParticipantsToGroup(req.params.id, req.user._id, participants);
-    res.json({ success: true, data: updatedGroup });
+    sendSuccess(res, 'Participants added', updatedGroup);
   } catch (error) {
-    console.error(error);
-    const status = error.statusCode || 500;
-    res.status(status).json({ success: false, message: error.message || 'Adding participants failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.ADDING_PARTICIPANTS_FAILED);
   }
 };
 
@@ -281,11 +237,9 @@ export const removeGroupParticipant = async (req, res) => {
   try {
     const { participantId } = req.params;
     const updatedGroup = await removeParticipantFromGroup(req.params.id, req.user._id, participantId);
-    res.json({ success: true, data: updatedGroup });
+    sendSuccess(res, 'Participant removed', updatedGroup);
   } catch (error) {
-    console.error(error);
-    const status = error.statusCode || 500;
-    res.status(status).json({ success: false, message: error.message || 'Removing participant failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.REMOVING_PARTICIPANT_FAILED);
   }
 };
 
@@ -296,14 +250,12 @@ export const changeRole = async (req, res) => {
   try {
     const { participantId, role } = req.body;
     if (!participantId || !role) {
-      return res.status(400).json({ success: false, message: 'participantId and role required' });
+      return sendError(res, 'participantId and role required', STATUS_CODES.BAD_REQUEST);
     }
     const updatedGroup = await changeParticipantRole(req.params.id, req.user._id, participantId, role);
-    res.json({ success: true, data: updatedGroup });
+    sendSuccess(res, 'Role updated', updatedGroup);
   } catch (error) {
-    console.error(error);
-    const status = error.statusCode || 500;
-    res.status(status).json({ success: false, message: error.message || 'Changing role failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.CHANGING_ROLE_FAILED);
   }
 };
 
@@ -314,13 +266,12 @@ export const archiveConversation = async (req, res) => {
   try {
     const { archived } = req.body;
     if (typeof archived !== 'boolean') {
-      return res.status(400).json({ success: false, message: 'archived must be boolean' });
+      return sendError(res, 'archived must be boolean', STATUS_CODES.BAD_REQUEST);
     }
     const convo = await setConversationArchivedStatus(req.params.id, req.user._id, archived);
-    res.json({ success: true, data: convo });
+    sendSuccess(res, 'Archive status updated', convo);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Archiving failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.ARCHIVING_FAILED);
   }
 };
 
@@ -329,14 +280,13 @@ export const archiveConversation = async (req, res) => {
  */
 export const searchUsers = async (req, res) => {
   try {
-    const users = await searchActiveUsers(req.query.q, req.user._id);
-    res.json({ success: true, data: users });
+    const users = await searchUsersService(req.query.q, req.user._id, 10); // FIXED: Using renamed import
+    sendSuccess(res, 'Users found', users);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 400) {
-      return res.status(400).json({ success: false, message: 'Query too short' });
+    if (error.statusCode === STATUS_CODES.BAD_REQUEST) {
+      return sendError(res, ERROR_MESSAGES.QUERY_TOO_SHORT, STATUS_CODES.BAD_REQUEST);
     }
-    res.status(500).json({ success: false, message: 'Search failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.SEARCH_FAILED);
   }
 };
 

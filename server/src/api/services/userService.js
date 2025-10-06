@@ -1,14 +1,13 @@
 import User from '../models/User.js';
+import { ERROR_MESSAGES } from '../constants/index.js';
 
 /**
  * Retrieve user profile by ID.
- * Throws 404 if user not found.
- * Returns public profile only.
  */
 export const getUserProfile = async (userId) => {
   const user = await User.findById(userId);
   if (!user) {
-    const error = new Error('User not found');
+    const error = new Error(ERROR_MESSAGES.USER_NOT_FOUND);
     error.statusCode = 404;
     throw error;
   }
@@ -17,14 +16,12 @@ export const getUserProfile = async (userId) => {
 
 /**
  * Update user profile fields.
- * Prevents duplicate email usage.
- * Returns updated public profile.
  */
 export const updateUserProfile = async (userId, updateData) => {
   if (updateData.email) {
     const exists = await User.findOne({ email: updateData.email, _id: { $ne: userId } });
     if (exists) {
-      const error = new Error('Email already in use');
+      const error = new Error(ERROR_MESSAGES.EMAIL_IN_USE);
       error.statusCode = 400;
       throw error;
     }
@@ -45,14 +42,13 @@ export const updateUserProfile = async (userId, updateData) => {
     { 
       new: true, 
       runValidators: true,
-      // This option is important for Map fields
       overwrite: false,
       upsert: false
     }
   );
 
   if (!user) {
-    const error = new Error('User not found');
+    const error = new Error(ERROR_MESSAGES.USER_NOT_FOUND);
     error.statusCode = 404;
     throw error;
   }
@@ -62,12 +58,11 @@ export const updateUserProfile = async (userId, updateData) => {
 
 /**
  * Search users by name or email (case-insensitive).
- * Excludes current user.
- * Limits results.
+ * Used by userController and can be used by chatController when needed
  */
 export const searchUsers = async (query, excludeUserId, limit = 10) => {
   if (!query || query.length < 2) {
-    const error = new Error('Query too short');
+    const error = new Error(ERROR_MESSAGES.QUERY_TOO_SHORT);
     error.statusCode = 400;
     throw error;
   }

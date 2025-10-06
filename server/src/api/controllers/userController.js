@@ -1,5 +1,7 @@
 import { getUserProfile, updateUserProfile, searchUsers } from '../services/userService.js';
 import { validateUpdateProfile } from '../validations/userValidation.js';
+import { sendSuccess, sendError, sendValidationError, sendServiceError } from '../utils/responseHelper.js';
+import { SUCCESS_MESSAGES, ERROR_MESSAGES, STATUS_CODES } from '../constants/index.js';
 
 /**
  * Get authenticated user's own profile
@@ -7,13 +9,9 @@ import { validateUpdateProfile } from '../validations/userValidation.js';
 export const getMe = async (req, res) => {
   try {
     const profile = await getUserProfile(req.user._id);
-    res.status(200).json({ success: true, data: profile });
+    sendSuccess(res, 'Profile retrieved', profile);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 404) {
-      return res.status(404).json({ success: false, message: error.message });
-    }
-    res.status(500).json({ success: false, message: 'Server error retrieving profile' });
+    sendServiceError(res, error, ERROR_MESSAGES.PROFILE_RETRIEVAL_ERROR);
   }
 };
 
@@ -23,13 +21,9 @@ export const getMe = async (req, res) => {
 export const getProfile = async (req, res) => {
   try {
     const profile = await getUserProfile(req.params.userId);
-    res.status(200).json({ success: true, data: profile });
+    sendSuccess(res, 'Profile retrieved', profile);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 404) {
-      return res.status(404).json({ success: false, message: error.message });
-    }
-    res.status(500).json({ success: false, message: 'Server error retrieving profile' });
+    sendServiceError(res, error, ERROR_MESSAGES.PROFILE_RETRIEVAL_ERROR);
   }
 };
 
@@ -39,16 +33,14 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const { error } = validateUpdateProfile(req.body);
-    if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+    if (error) return sendValidationError(res, error);
 
-    // ADD PHONE TO ALLOWED FIELDS
     const allowedFields = ['name', 'email', 'status', 'avatar', 'bio', 'location', 'phone', 'socialLinks'];
     const updateData = {};
     
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) {
         if (field === 'socialLinks') {
-          // Handle socialLinks Map field properly
           updateData[field] = new Map();
           if (typeof req.body[field] === 'object' && req.body[field] !== null) {
             Object.entries(req.body[field]).forEach(([platform, url]) => {
@@ -64,13 +56,9 @@ export const updateProfile = async (req, res) => {
     });
 
     const updatedProfile = await updateUserProfile(req.user._id, updateData);
-    res.status(200).json({ success: true, message: 'Profile updated', data: updatedProfile });
+    sendSuccess(res, SUCCESS_MESSAGES.PROFILE_UPDATED, updatedProfile);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 400) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
-    res.status(500).json({ success: false, message: 'Server error updating profile' });
+    sendServiceError(res, error, ERROR_MESSAGES.PROFILE_UPDATE_ERROR);
   }
 };
 
@@ -81,13 +69,12 @@ export const searchUsersController = async (req, res) => {
   try {
     const { q: query, limit = 10 } = req.query;
     const users = await searchUsers(query, req.user._id, parseInt(limit));
-    res.json({ success: true, data: users });
+    sendSuccess(res, 'Users found', users);
   } catch (error) {
-    console.error(error);
-    if (error.statusCode === 400) {
-      return res.status(400).json({ success: false, message: error.message });
+    if (error.statusCode === STATUS_CODES.BAD_REQUEST) {
+      return sendError(res, error.message, STATUS_CODES.BAD_REQUEST);
     }
-    res.status(500).json({ success: false, message: 'Search failed' });
+    sendServiceError(res, error, ERROR_MESSAGES.SEARCH_FAILED);
   }
 };
 

@@ -78,13 +78,12 @@ conversationSchema.virtual('participantCount').get(function () {
   return this.participants.length;
 });
 
-// FIXED: Check if user is a participant with better ObjectId handling
+// Check if user is a participant
 conversationSchema.methods.hasParticipant = function (userId) {
   if (!userId) return false;
   
   const userIdString = userId.toString();
   return this.participants.some((p) => {
-    // Handle both populated and non-populated participants
     const participantId = p.user._id || p.user;
     return participantId.toString() === userIdString;
   });
@@ -99,14 +98,6 @@ conversationSchema.methods.getParticipant = function (userId) {
     const participantId = p.user._id || p.user;
     return participantId.toString() === userIdString;
   });
-};
-
-// Add participant if allowed and not present
-conversationSchema.methods.addParticipant = function (userId, role = 'member') {
-  if (this.hasParticipant(userId)) return false;
-  if (!this.settings.allowNewMembers) throw new Error('Adding new members not allowed');
-  this.participants.push({ user: userId, role });
-  return this.save();
 };
 
 // Remove participant
@@ -137,18 +128,6 @@ conversationSchema.methods.changeParticipantRole = function (userId, newRole) {
 conversationSchema.methods.updateLastMessage = function (content, senderId) {
   this.lastMessage = { content, sender: senderId, timestamp: new Date() };
   return this.save();
-};
-
-// Static method to find user's active conversations with detailed user info
-conversationSchema.statics.findUserConversations = function (userId) {
-  return this.find({ 
-    'participants.user': userId, 
-    isActive: true, 
-    'settings.archived': false 
-  })
-    .populate('participants.user', 'name email avatar status lastSeen')
-    .populate('lastMessage.sender', 'name avatar')
-    .sort({ 'lastMessage.timestamp': -1 });
 };
 
 export default mongoose.model('Conversation', conversationSchema);
