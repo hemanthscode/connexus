@@ -1,19 +1,16 @@
 /**
- * Utility Formatting Functions
- * Centralized formatting helpers
+ * Utility Formatting Functions - OPTIMIZED & FIXED
+ * Consolidated formatters with reduced redundancy
  */
 
-import { TIME_CONSTANTS, DATE_FORMATS } from './constants.js';
+import { TIME } from './constants.js';
 
 // =============================================================================
-// Text Formatting
+// Text Formatting - ENHANCED
 // =============================================================================
 
 /**
- * Get initials from a name
- * @param {string} name - Full name
- * @param {number} maxInitials - Maximum number of initials (default: 2)
- * @returns {string} Formatted initials
+ * Get initials from a name - ENHANCED
  */
 export const getInitials = (name, maxInitials = 2) => {
   if (!name || typeof name !== 'string') return '??';
@@ -29,357 +26,428 @@ export const getInitials = (name, maxInitials = 2) => {
 };
 
 /**
- * Truncate text with ellipsis
- * @param {string} text - Text to truncate
- * @param {number} maxLength - Maximum length (default: 50)
- * @param {string} suffix - Suffix to add (default: '...')
- * @returns {string} Truncated text
+ * Text truncation with smart word boundaries
  */
 export const truncateText = (text, maxLength = 50, suffix = '...') => {
   if (!text || typeof text !== 'string') return '';
   if (text.length <= maxLength) return text;
   
-  return text.slice(0, maxLength - suffix.length).trim() + suffix;
-};
-
-/**
- * Capitalize first letter of each word
- * @param {string} text - Text to capitalize
- * @returns {string} Capitalized text
- */
-export const capitalizeWords = (text) => {
-  if (!text || typeof text !== 'string') return '';
+  // Try to break at word boundary
+  const truncated = text.slice(0, maxLength - suffix.length);
+  const lastSpace = truncated.lastIndexOf(' ');
   
-  return text
-    .toLowerCase()
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-/**
- * Capitalize first letter only
- * @param {string} text - Text to capitalize
- * @returns {string} Capitalized text
- */
-export const capitalizeFirst = (text) => {
-  if (!text || typeof text !== 'string') return '';
-  
-  return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
-};
-
-/**
- * Convert text to slug format
- * @param {string} text - Text to convert
- * @returns {string} Slug format text
- */
-export const slugify = (text) => {
-  if (!text || typeof text !== 'string') return '';
-  
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-};
-
-/**
- * Extract mentions from text
- * @param {string} text - Text to extract mentions from
- * @returns {Array} Array of mentions
- */
-export const extractMentions = (text) => {
-  if (!text || typeof text !== 'string') return [];
-  
-  const mentionRegex = /@(\w+)/g;
-  const mentions = [];
-  let match;
-  
-  while ((match = mentionRegex.exec(text)) !== null) {
-    mentions.push(match[1]);
+  if (lastSpace > maxLength * 0.6) {
+    return truncated.slice(0, lastSpace).trim() + suffix;
   }
   
-  return [...new Set(mentions)]; // Remove duplicates
+  return truncated.trim() + suffix;
 };
 
 /**
- * Highlight search terms in text
- * @param {string} text - Text to highlight
- * @param {string} searchTerm - Term to highlight
- * @param {string} className - CSS class for highlight
- * @returns {string} HTML string with highlights
+ * Smart capitalization helpers - CONSOLIDATED
  */
-export const highlightSearchTerms = (text, searchTerm, className = 'highlight') => {
-  if (!text || !searchTerm) return text;
+export const textTransformers = {
+  capitalizeWords: (text) => {
+    if (!text || typeof text !== 'string') return '';
+    return text
+      .toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  },
+
+  capitalizeFirst: (text) => {
+    if (!text || typeof text !== 'string') return '';
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+  },
+
+  slugify: (text) => {
+    if (!text || typeof text !== 'string') return '';
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+};
+
+/**
+ * Enhanced text parsing and extraction
+ */
+export const textParsers = {
+  extractMentions: (text) => {
+    if (!text || typeof text !== 'string') return [];
+    const mentionRegex = /@(\w+)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.push(match[1]);
+    }
+    return [...new Set(mentions)];
+  },
+
+  extractUrls: (text) => {
+    if (!text || typeof text !== 'string') return [];
+    const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/g;
+    const urls = text.match(urlRegex);
+    return urls ? [...new Set(urls)] : [];
+  },
+
+  extractHashtags: (text) => {
+    if (!text || typeof text !== 'string') return [];
+    const hashtagRegex = /#(\w+)/g;
+    const hashtags = [];
+    let match;
+    while ((match = hashtagRegex.exec(text)) !== null) {
+      hashtags.push(match[1]);
+    }
+    return [...new Set(hashtags)];
+  }
+};
+
+/**
+ * Text highlighting with multiple terms support
+ */
+export const highlightSearchTerms = (text, searchTerms, className = 'highlight') => {
+  if (!text || !searchTerms) return text;
   
-  const regex = new RegExp(`(${searchTerm})`, 'gi');
+  const terms = Array.isArray(searchTerms) ? searchTerms : [searchTerms];
+  const escapedTerms = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+  
   return text.replace(regex, `<span class="${className}">$1</span>`);
 };
 
 // =============================================================================
-// Number Formatting
+// Number Formatting - ENHANCED
 // =============================================================================
 
 /**
- * Format file size in human readable format
- * @param {number} bytes - Size in bytes
- * @param {number} decimals - Number of decimal places (default: 2)
- * @returns {string} Formatted file size
+ * File size formatting with better precision
  */
-export const formatFileSize = (bytes, decimals = 2) => {
+export const formatFileSize = (bytes, decimals = 1) => {
   if (!bytes || bytes === 0) return '0 B';
   
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  const value = parseFloat((bytes / Math.pow(k, i)).toFixed(dm));
+  return `${value} ${sizes[i]}`;
 };
 
 /**
- * Format number with commas
- * @param {number} num - Number to format
- * @returns {string} Formatted number
+ * Number formatting utilities - CONSOLIDATED
  */
-export const formatNumber = (num) => {
-  if (num === null || num === undefined) return '0';
-  
-  return new Intl.NumberFormat().format(num);
-};
+export const numberFormatters = {
+  withCommas: (num) => {
+    if (num === null || num === undefined) return '0';
+    return new Intl.NumberFormat().format(num);
+  },
 
-/**
- * Format number in compact form (1.2K, 1.2M, etc.)
- * @param {number} num - Number to format
- * @returns {string} Compact formatted number
- */
-export const formatCompactNumber = (num) => {
-  if (num === null || num === undefined) return '0';
-  
-  return new Intl.NumberFormat('en', { 
-    notation: 'compact',
-    maximumFractionDigits: 1 
-  }).format(num);
-};
+  compact: (num) => {
+    if (num === null || num === undefined) return '0';
+    return new Intl.NumberFormat('en', { 
+      notation: 'compact',
+      maximumFractionDigits: 1 
+    }).format(num);
+  },
 
-/**
- * Format percentage
- * @param {number} value - Value to format as percentage
- * @param {number} total - Total value (default: 100)
- * @param {number} decimals - Decimal places (default: 1)
- * @returns {string} Formatted percentage
- */
-export const formatPercentage = (value, total = 100, decimals = 1) => {
-  if (value === null || value === undefined || total === 0) return '0%';
-  
-  const percentage = (value / total) * 100;
-  return percentage.toFixed(decimals) + '%';
+  percentage: (value, total = 100, decimals = 1) => {
+    if (value === null || value === undefined || total === 0) return '0%';
+    const percentage = (value / total) * 100;
+    return percentage.toFixed(decimals) + '%';
+  },
+
+  currency: (amount, currency = 'USD') => {
+    if (amount === null || amount === undefined) return '$0.00';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency
+    }).format(amount);
+  },
+
+  ordinal: (num) => {
+    const suffixes = ['th', 'st', 'nd', 'rd'];
+    const v = num % 100;
+    return num + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
+  }
 };
 
 // =============================================================================
-// Date & Time Formatting
+// Date & Time Formatting - ENHANCED
 // =============================================================================
 
 /**
- * Format date relative to now (e.g., "2 hours ago")
- * @param {Date|string|number} date - Date to format
- * @returns {string} Relative time string
+ * Enhanced relative time formatting
  */
-export const formatRelativeTime = (date) => {
+export const formatRelativeTime = (date, options = {}) => {
   if (!date) return '';
   
   const now = new Date();
   const targetDate = new Date(date);
   const diffInMs = now - targetDate;
+  const { showFuture = true, shortForm = false } = options;
   
-  // If in the future, return "in X time"
+  // Future dates
   if (diffInMs < 0) {
+    if (!showFuture) return 'Future';
+    
     const absDiff = Math.abs(diffInMs);
-    if (absDiff < TIME_CONSTANTS.MINUTE) return 'in a few seconds';
-    if (absDiff < TIME_CONSTANTS.HOUR) return `in ${Math.floor(absDiff / TIME_CONSTANTS.MINUTE)} minutes`;
-    if (absDiff < TIME_CONSTANTS.DAY) return `in ${Math.floor(absDiff / TIME_CONSTANTS.HOUR)} hours`;
-    return `in ${Math.floor(absDiff / TIME_CONSTANTS.DAY)} days`;
+    const units = [
+      { limit: TIME.CONSTANTS.MINUTE, label: shortForm ? 's' : 'seconds', divisor: TIME.CONSTANTS.SECOND },
+      { limit: TIME.CONSTANTS.HOUR, label: shortForm ? 'm' : 'minutes', divisor: TIME.CONSTANTS.MINUTE },
+      { limit: TIME.CONSTANTS.DAY, label: shortForm ? 'h' : 'hours', divisor: TIME.CONSTANTS.HOUR },
+      { limit: Infinity, label: shortForm ? 'd' : 'days', divisor: TIME.CONSTANTS.DAY }
+    ];
+    
+    for (const unit of units) {
+      if (absDiff < unit.limit) {
+        const value = Math.floor(absDiff / unit.divisor);
+        return shortForm ? `${value}${unit.label}` : `in ${value} ${unit.label}`;
+      }
+    }
   }
   
   // Past times
-  if (diffInMs < TIME_CONSTANTS.MINUTE) return 'just now';
-  if (diffInMs < TIME_CONSTANTS.HOUR) return `${Math.floor(diffInMs / TIME_CONSTANTS.MINUTE)} minutes ago`;
-  if (diffInMs < TIME_CONSTANTS.DAY) return `${Math.floor(diffInMs / TIME_CONSTANTS.HOUR)} hours ago`;
-  if (diffInMs < TIME_CONSTANTS.WEEK) return `${Math.floor(diffInMs / TIME_CONSTANTS.DAY)} days ago`;
-  if (diffInMs < TIME_CONSTANTS.MONTH) return `${Math.floor(diffInMs / TIME_CONSTANTS.WEEK)} weeks ago`;
-  if (diffInMs < TIME_CONSTANTS.YEAR) return `${Math.floor(diffInMs / TIME_CONSTANTS.MONTH)} months ago`;
+  const units = [
+    { limit: TIME.CONSTANTS.MINUTE, label: shortForm ? 'now' : 'just now' },
+    { limit: TIME.CONSTANTS.HOUR, label: shortForm ? 'm' : 'minutes ago', divisor: TIME.CONSTANTS.MINUTE },
+    { limit: TIME.CONSTANTS.DAY, label: shortForm ? 'h' : 'hours ago', divisor: TIME.CONSTANTS.HOUR },
+    { limit: TIME.CONSTANTS.WEEK, label: shortForm ? 'd' : 'days ago', divisor: TIME.CONSTANTS.DAY },
+    { limit: TIME.CONSTANTS.MONTH, label: shortForm ? 'w' : 'weeks ago', divisor: TIME.CONSTANTS.WEEK },
+    { limit: TIME.CONSTANTS.YEAR, label: shortForm ? 'mo' : 'months ago', divisor: TIME.CONSTANTS.MONTH },
+    { limit: Infinity, label: shortForm ? 'y' : 'years ago', divisor: TIME.CONSTANTS.YEAR }
+  ];
   
-  return `${Math.floor(diffInMs / TIME_CONSTANTS.YEAR)} years ago`;
+  for (const unit of units) {
+    if (diffInMs < unit.limit) {
+      if (!unit.divisor) return unit.label;
+      const value = Math.floor(diffInMs / unit.divisor);
+      return shortForm ? `${value}${unit.label}` : `${value} ${unit.label}`;
+    }
+  }
 };
 
 /**
- * Format chat message timestamp
- * @param {Date|string|number} date - Date to format
- * @returns {string} Chat-friendly time format
+ * Smart chat time formatting
  */
-export const formatChatTime = (date) => {
+export const formatChatTime = (date, options = {}) => {
   if (!date) return '';
   
   const now = new Date();
   const targetDate = new Date(date);
-  const diffInMs = now - targetDate;
+  const { showSeconds = false, use24Hour = false } = options;
   
   // Same day - show time only
-  if (diffInMs < TIME_CONSTANTS.DAY && now.toDateString() === targetDate.toDateString()) {
-    return targetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (now.toDateString() === targetDate.toDateString()) {
+    return targetDate.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      ...(showSeconds && { second: '2-digit' }),
+      hour12: !use24Hour
+    });
   }
   
   // This week - show day and time
-  if (diffInMs < TIME_CONSTANTS.WEEK) {
-    return targetDate.toLocaleDateString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  const diffInMs = now - targetDate;
+  if (diffInMs < TIME.CONSTANTS.WEEK) {
+    return targetDate.toLocaleDateString([], { 
+      weekday: 'short', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: !use24Hour
+    });
   }
   
-  // Older - show date
-  return targetDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
-};
-
-/**
- * Format duration in minutes and seconds
- * @param {number} seconds - Duration in seconds
- * @returns {string} Formatted duration
- */
-export const formatDuration = (seconds) => {
-  if (!seconds || seconds < 0) return '0:00';
+  // This year - show date without year
+  if (now.getFullYear() === targetDate.getFullYear()) {
+    return targetDate.toLocaleDateString([], { 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: !use24Hour
+    });
+  }
   
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
-
-/**
- * Check if date is today
- * @param {Date|string|number} date - Date to check
- * @returns {boolean} True if date is today
- */
-export const isToday = (date) => {
-  if (!date) return false;
-  
-  const today = new Date();
-  const targetDate = new Date(date);
-  
-  return today.toDateString() === targetDate.toDateString();
-};
-
-/**
- * Check if date is yesterday
- * @param {Date|string|number} date - Date to check
- * @returns {boolean} True if date is yesterday
- */
-export const isYesterday = (date) => {
-  if (!date) return false;
-  
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const targetDate = new Date(date);
-  
-  return yesterday.toDateString() === targetDate.toDateString();
-};
-
-// =============================================================================
-// URL & Link Formatting
-// =============================================================================
-
-/**
- * Extract URLs from text
- * @param {string} text - Text to extract URLs from
- * @returns {Array} Array of URLs
- */
-export const extractUrls = (text) => {
-  if (!text || typeof text !== 'string') return [];
-  
-  const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/g;
-  const urls = text.match(urlRegex);
-  
-  return urls ? [...new Set(urls)] : [];
-};
-
-/**
- * Convert URLs in text to clickable links
- * @param {string} text - Text to process
- * @param {string} target - Link target (default: '_blank')
- * @returns {string} HTML string with clickable links
- */
-export const linkifyText = (text, target = '_blank') => {
-  if (!text || typeof text !== 'string') return '';
-  
-  const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/g;
-  
-  return text.replace(urlRegex, (url) => {
-    return `<a href="${url}" target="${target}" rel="noopener noreferrer" class="text-link">${url}</a>`;
+  // Different year - show full date
+  return targetDate.toLocaleDateString([], { 
+    year: 'numeric',
+    month: 'short', 
+    day: 'numeric' 
   });
 };
 
 /**
- * Get domain from URL
- * @param {string} url - URL to extract domain from
- * @returns {string} Domain name
+ * Enhanced date utilities
  */
-export const getDomainFromUrl = (url) => {
-  if (!url || typeof url !== 'string') return '';
-  
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname.replace('www.', '');
-  } catch {
-    return '';
+export const dateUtils = {
+  formatDuration: (seconds) => {
+    if (!seconds || seconds < 0) return '0:00';
+    
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  },
+
+  isToday: (date) => {
+    if (!date) return false;
+    const today = new Date();
+    const targetDate = new Date(date);
+    return today.toDateString() === targetDate.toDateString();
+  },
+
+  isYesterday: (date) => {
+    if (!date) return false;
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const targetDate = new Date(date);
+    return yesterday.toDateString() === targetDate.toDateString();
+  },
+
+  isThisWeek: (date) => {
+    if (!date) return false;
+    const now = new Date();
+    const targetDate = new Date(date);
+    return (now - targetDate) < TIME.CONSTANTS.WEEK;
+  },
+
+  getTimeAgo: (date, short = false) => {
+    return formatRelativeTime(date, { shortForm: short });
   }
 };
 
 // =============================================================================
-// Error Formatting
+// URL & Link Formatting - ENHANCED
 // =============================================================================
 
 /**
- * Format error for user display
- * @param {Error|Object|string} error - Error to format
- * @returns {string} User-friendly error message
+ * Advanced URL utilities
  */
-export const formatError = (error) => {
+export const urlUtils = {
+  linkifyText: (text, options = {}) => {
+    if (!text || typeof text !== 'string') return '';
+    
+    const { target = '_blank', className = 'text-link', truncate = false, maxLength = 30 } = options;
+    const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/g;
+    
+    return text.replace(urlRegex, (url) => {
+      const displayUrl = truncate && url.length > maxLength ? 
+        url.substring(0, maxLength) + '...' : url;
+      
+      return `<a href="${url}" target="${target}" rel="noopener noreferrer" class="${className}">${displayUrl}</a>`;
+    });
+  },
+
+  getDomainFromUrl: (url) => {
+    if (!url || typeof url !== 'string') return '';
+    
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace('www.', '');
+    } catch {
+      return '';
+    }
+  },
+
+  isValidUrl: (url) => {
+    if (!url || typeof url !== 'string') return false;
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  extractDomain: (email) => {
+    if (!email || typeof email !== 'string') return '';
+    const domain = email.split('@')[1];
+    return domain || '';
+  }
+};
+
+// =============================================================================
+// Error Formatting - ENHANCED
+// =============================================================================
+
+/**
+ * Enhanced error formatting with context
+ */
+export const formatError = (error, context = null) => {
   if (!error) return 'An unexpected error occurred';
   
   // String error
   if (typeof error === 'string') return error;
   
-  // API error with response
-  if (error.response?.data?.message) {
-    return error.response.data.message;
+  // API error with detailed response
+  if (error.response?.data) {
+    const data = error.response.data;
+    if (data.message) return data.message;
+    if (data.error) return data.error;
+    if (data.details) return data.details;
   }
   
-  // API error with status text
-  if (error.response?.statusText) {
-    return error.response.statusText;
+  // HTTP status errors
+  if (error.response?.status) {
+    const status = error.response.status;
+    const statusMessages = {
+      400: 'Bad request. Please check your input.',
+      401: 'Authentication required. Please log in.',
+      403: 'Access denied. You do not have permission.',
+      404: 'Resource not found.',
+      408: 'Request timeout. Please try again.',
+      409: 'Conflict. Resource already exists.',
+      422: 'Validation failed. Please check your input.',
+      429: 'Too many requests. Please wait and try again.',
+      500: 'Internal server error. Please try again later.',
+      502: 'Bad gateway. Service temporarily unavailable.',
+      503: 'Service unavailable. Please try again later.',
+      504: 'Gateway timeout. Please try again.',
+    };
+    
+    if (statusMessages[status]) {
+      return context ? `${context}: ${statusMessages[status]}` : statusMessages[status];
+    }
   }
   
   // Standard error object
-  if (error.message) {
-    return error.message;
+  if (error.message) return error.message;
+  
+  // Network and timeout errors
+  const networkErrors = {
+    'NETWORK_ERROR': 'Network connection error. Please check your internet connection.',
+    'NetworkError': 'Network connection error. Please check your internet connection.',
+    'ECONNABORTED': 'Request timeout. Please try again.',
+    'ENOTFOUND': 'Server not found. Please check your connection.',
+    'ECONNREFUSED': 'Connection refused. Server may be down.',
+  };
+  
+  if (error.code && networkErrors[error.code]) {
+    return networkErrors[error.code];
   }
   
-  // Network errors
-  if (error.code === 'NETWORK_ERROR' || error.name === 'NetworkError') {
-    return 'Network connection error. Please check your internet connection.';
+  if (error.name && networkErrors[error.name]) {
+    return networkErrors[error.name];
   }
   
-  // Timeout errors
-  if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+  if (error.message?.includes('timeout')) {
     return 'Request timeout. Please try again.';
   }
   
-  return 'An unexpected error occurred';
+  return context ? `${context}: An unexpected error occurred` : 'An unexpected error occurred';
 };
 
 /**
  * Get error severity level
- * @param {Error|Object} error - Error to analyze
- * @returns {string} Severity level ('low', 'medium', 'high', 'critical')
  */
 export const getErrorSeverity = (error) => {
   if (!error) return 'low';
@@ -388,22 +456,23 @@ export const getErrorSeverity = (error) => {
   
   if (status >= 500) return 'critical';
   if (status >= 400) return 'high';
-  if (error.name === 'NetworkError') return 'medium';
+  if (error.name === 'NetworkError' || error.code === 'NETWORK_ERROR') return 'medium';
+  if (error.message?.includes('timeout')) return 'medium';
   
   return 'low';
 };
 
 // =============================================================================
-// Color & Theme Utilities
+// Color & Theme Utilities - ENHANCED
 // =============================================================================
 
 /**
- * Generate consistent color from string (for avatars, etc.)
- * @param {string} str - String to generate color from
- * @returns {string} Hex color code
+ * Enhanced color generation with better distribution
  */
-export const generateColorFromString = (str) => {
+export const generateColorFromString = (str, options = {}) => {
   if (!str || typeof str !== 'string') return '#6B7280';
+  
+  const { saturation = 65, lightness = 50, alpha = 1 } = options;
   
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -411,71 +480,101 @@ export const generateColorFromString = (str) => {
   }
   
   const hue = Math.abs(hash) % 360;
-  const saturation = 65 + (Math.abs(hash) % 35); // 65-100%
-  const lightness = 45 + (Math.abs(hash) % 25); // 45-70%
+  const sat = saturation + (Math.abs(hash) % 35); // 65-100%
+  const light = lightness + (Math.abs(hash) % 25); // 50-75%
   
-  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  if (alpha < 1) {
+    return `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+  }
+  
+  return `hsl(${hue}, ${sat}%, ${light}%)`;
 };
 
 /**
- * Check if color is dark
- * @param {string} color - Color to check (hex, rgb, hsl)
- * @returns {boolean} True if color is dark
+ * Color utilities
  */
-export const isColorDark = (color) => {
-  if (!color || typeof color !== 'string') return false;
-  
-  // Convert hex to RGB
-  if (color.startsWith('#')) {
-    const hex = color.slice(1);
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
+export const colorUtils = {
+  isColorDark: (color) => {
+    if (!color || typeof color !== 'string') return false;
     
-    // Calculate luminance
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance < 0.5;
+    // Convert hex to RGB
+    if (color.startsWith('#')) {
+      const hex = color.slice(1);
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      
+      // Calculate luminance
+      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      return luminance < 0.5;
+    }
+    
+    return false;
+  },
+
+  getContrastColor: (backgroundColor) => {
+    return colorUtils.isColorDark(backgroundColor) ? '#ffffff' : '#000000';
+  },
+
+  hexToHsl: (hex) => {
+    if (!hex) return null;
+    
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    
+    let h, s, l = (max + min) / 2;
+    
+    if (max === min) {
+      h = s = 0; // achromatic
+    } else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      
+      h /= 6;
+    }
+    
+    return { h: h * 360, s: s * 100, l: l * 100 };
   }
-  
-  return false;
 };
 
 // =============================================================================
-// Export All Functions
+// Default Export - FIXED (no duplicates)
 // =============================================================================
 export default {
-  // Text formatting
+  // Text utilities
   getInitials,
   truncateText,
-  capitalizeWords,
-  capitalizeFirst,
-  slugify,
-  extractMentions,
   highlightSearchTerms,
+  textTransformers,
+  textParsers,
   
-  // Number formatting
+  // Number utilities
   formatFileSize,
-  formatNumber,
-  formatCompactNumber,
-  formatPercentage,
+  numberFormatters,
   
-  // Date & time formatting
+  // Date utilities
   formatRelativeTime,
   formatChatTime,
-  formatDuration,
-  isToday,
-  isYesterday,
+  dateUtils,
   
-  // URL & link formatting
-  extractUrls,
-  linkifyText,
-  getDomainFromUrl,
+  // URL utilities
+  urlUtils,
   
-  // Error formatting
+  // Error utilities
   formatError,
   getErrorSeverity,
   
   // Color utilities
   generateColorFromString,
-  isColorDark,
+  colorUtils,
 };

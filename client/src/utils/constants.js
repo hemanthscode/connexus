@@ -1,6 +1,6 @@
 /**
- * Application Constants
- * Centralized configuration and constants
+ * Application Constants - OPTIMIZED
+ * Centralized configuration with reduced redundancy
  */
 
 // =============================================================================
@@ -101,43 +101,39 @@ export const CONVERSATION_TYPES = {
   CHANNEL: 'channel',
 };
 
-export const REACTION_EMOJIS = [
-  '👍', '❤️', '😂', '😮', '😢', '😡', '👏', '🙏',
-  '🔥', '💯', '🎉', '👀', '🤔', '😍', '🙌', '💀'
-];
-
-// =============================================================================
-// File & Upload Constants
-// =============================================================================
-export const FILE_TYPES = {
-  IMAGE: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
-  VIDEO: ['mp4', 'webm', 'ogg', 'avi', 'mov'],
-  AUDIO: ['mp3', 'wav', 'ogg', 'aac', 'm4a'],
-  DOCUMENT: ['pdf', 'doc', 'docx', 'txt', 'rtf'],
-  ARCHIVE: ['zip', 'rar', '7z', 'tar', 'gz'],
+// CONSOLIDATED: Single source of emoji constants
+export const EMOJIS = {
+  // Quick reactions (used for message reactions)
+  REACTIONS: [
+    '👍', '❤️', '😂', '😮', '😢', '😡', '👏', '🙏',
+    '🔥', '💯', '🎉', '👀', '🤔', '😍', '🙌', '💀'
+  ],
+  
+  // Message input emojis (used in input emoji picker)
+  INPUT: [
+    '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣',
+    '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰',
+    '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜',
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍',
+    '👍', '👎', '👌', '✌️', '🤞', '🤟', '🤘', '🤙',
+    '🔥', '💯', '🎉', '👀', '🤔', '💪', '🙌', '👏'
+  ]
 };
 
-export const FILE_SIZE_LIMITS = {
-  AVATAR: 5 * 1024 * 1024, // 5MB
-  IMAGE: 10 * 1024 * 1024, // 10MB
-  VIDEO: 100 * 1024 * 1024, // 100MB
-  AUDIO: 25 * 1024 * 1024, // 25MB
-  DOCUMENT: 50 * 1024 * 1024, // 50MB
-  DEFAULT: 25 * 1024 * 1024, // 25MB
-};
+// Legacy export for backward compatibility
+export const REACTION_EMOJIS = EMOJIS.REACTIONS;
 
 // =============================================================================
-// UI & UX Constants
+// UI & Animation Constants - CONSOLIDATED
 // =============================================================================
 export const ROUTES = {
-  HOME: '/',
   LOGIN: '/login',
   REGISTER: '/register',
   CHAT: '/chat',
   PROFILE: '/profile',
   SETTINGS: '/settings',
   NOT_FOUND: '/404',
-  WELCOME: '/welcome',
+  WELCOME: '/',
 };
 
 export const THEMES = {
@@ -154,22 +150,33 @@ export const BREAKPOINTS = {
   '2XL': 1536,
 };
 
-export const ANIMATION_DURATION = {
-  FAST: 150,
-  NORMAL: 300,
-  SLOW: 500,
+export const ANIMATION = {
+  DURATION: {
+    FAST: 150,
+    NORMAL: 300,
+    SLOW: 500,
+  },
+  SPRING: {
+    SOFT: { type: "spring", stiffness: 300, damping: 30 },
+    BOUNCY: { type: "spring", stiffness: 400, damping: 25 },
+    SMOOTH: { type: "spring", stiffness: 200, damping: 20 },
+  },
+  TRANSITIONS: {
+    FADE_IN: { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } },
+    SLIDE_UP: { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -20 } },
+    SCALE: { initial: { opacity: 0, scale: 0.9 }, animate: { opacity: 1, scale: 1 }, exit: { opacity: 0, scale: 0.9 } },
+    MODAL: { initial: { opacity: 0, scale: 0.9, y: 20 }, animate: { opacity: 1, scale: 1, y: 0 }, exit: { opacity: 0, scale: 0.9, y: 20 } }
+  }
 };
 
 // =============================================================================
-// Socket Events
+// Socket Events - ORGANIZED
 // =============================================================================
 export const SOCKET_EVENTS = {
   // Connection
   CONNECT: 'connect',
   DISCONNECT: 'disconnect',
   CONNECT_ERROR: 'connect_error',
-  
-  // Authentication
   AUTHENTICATE: 'authenticate',
   AUTHENTICATED: 'authenticated',
   
@@ -216,8 +223,54 @@ export const SOCKET_EVENTS = {
 };
 
 // =============================================================================
-// Pagination & Limits
+// File & Upload Constants
 // =============================================================================
+export const FILE_CONFIG = {
+  TYPES: {
+    IMAGE: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
+    VIDEO: ['mp4', 'webm', 'ogg', 'avi', 'mov'],
+    AUDIO: ['mp3', 'wav', 'ogg', 'aac', 'm4a'],
+    DOCUMENT: ['pdf', 'doc', 'docx', 'txt', 'rtf'],
+    ARCHIVE: ['zip', 'rar', '7z', 'tar', 'gz'],
+  },
+  SIZE_LIMITS: {
+    AVATAR: 5 * 1024 * 1024, // 5MB
+    IMAGE: 10 * 1024 * 1024, // 10MB
+    VIDEO: 100 * 1024 * 1024, // 100MB
+    AUDIO: 25 * 1024 * 1024, // 25MB
+    DOCUMENT: 50 * 1024 * 1024, // 50MB
+    DEFAULT: 25 * 1024 * 1024, // 25MB
+  }
+};
+
+// =============================================================================
+// Time & Pagination Constants
+// =============================================================================
+export const TIME = {
+  CONSTANTS: {
+    SECOND: 1000,
+    MINUTE: 60 * 1000,
+    HOUR: 60 * 60 * 1000,
+    DAY: 24 * 60 * 60 * 1000,
+    WEEK: 7 * 24 * 60 * 60 * 1000,
+    MONTH: 30 * 24 * 60 * 60 * 1000,
+    YEAR: 365 * 24 * 60 * 60 * 1000,
+  },
+  FORMATS: {
+    SHORT: 'MMM d',
+    MEDIUM: 'MMM d, yyyy',
+    LONG: 'MMMM d, yyyy',
+    TIME: 'HH:mm',
+    TIME_12: 'h:mm a',
+    DATETIME: 'MMM d, yyyy HH:mm',
+    DATETIME_12: 'MMM d, yyyy h:mm a',
+    ISO: "yyyy-MM-dd'T'HH:mm:ss.SSSxxx",
+  },
+  TYPING_TIMEOUT: 3000,
+  TYPING_THROTTLE: 1000,
+  MESSAGE_GROUP_TIME: 300000, // 5 minutes
+};
+
 export const PAGINATION = {
   DEFAULT_LIMIT: 50,
   MAX_LIMIT: 100,
@@ -228,33 +281,31 @@ export const PAGINATION = {
 };
 
 // =============================================================================
-// Error Codes & Messages
+// Error & Feature Configuration
 // =============================================================================
-export const ERROR_CODES = {
-  NETWORK_ERROR: 'NETWORK_ERROR',
-  UNAUTHORIZED: 'UNAUTHORIZED',
-  FORBIDDEN: 'FORBIDDEN',
-  NOT_FOUND: 'NOT_FOUND',
-  VALIDATION_ERROR: 'VALIDATION_ERROR',
-  SERVER_ERROR: 'SERVER_ERROR',
-  TIMEOUT_ERROR: 'TIMEOUT_ERROR',
+export const ERROR_CONFIG = {
+  CODES: {
+    NETWORK_ERROR: 'NETWORK_ERROR',
+    UNAUTHORIZED: 'UNAUTHORIZED',
+    FORBIDDEN: 'FORBIDDEN',
+    NOT_FOUND: 'NOT_FOUND',
+    VALIDATION_ERROR: 'VALIDATION_ERROR',
+    SERVER_ERROR: 'SERVER_ERROR',
+    TIMEOUT_ERROR: 'TIMEOUT_ERROR',
+  },
+  MESSAGES: {
+    NETWORK_ERROR: 'Network connection error. Please check your internet connection.',
+    UNAUTHORIZED: 'You are not authorized to perform this action.',
+    FORBIDDEN: 'Access denied. You do not have permission.',
+    NOT_FOUND: 'The requested resource was not found.',
+    VALIDATION_ERROR: 'Please check your input and try again.',
+    SERVER_ERROR: 'Server error. Please try again later.',
+    TIMEOUT_ERROR: 'Request timeout. Please try again.',
+    DEFAULT: 'An unexpected error occurred. Please try again.',
+  }
 };
 
-export const ERROR_MESSAGES = {
-  [ERROR_CODES.NETWORK_ERROR]: 'Network connection error. Please check your internet connection.',
-  [ERROR_CODES.UNAUTHORIZED]: 'You are not authorized to perform this action.',
-  [ERROR_CODES.FORBIDDEN]: 'Access denied. You do not have permission.',
-  [ERROR_CODES.NOT_FOUND]: 'The requested resource was not found.',
-  [ERROR_CODES.VALIDATION_ERROR]: 'Please check your input and try again.',
-  [ERROR_CODES.SERVER_ERROR]: 'Server error. Please try again later.',
-  [ERROR_CODES.TIMEOUT_ERROR]: 'Request timeout. Please try again.',
-  DEFAULT: 'An unexpected error occurred. Please try again.',
-};
-
-// =============================================================================
-// Feature Flags
-// =============================================================================
-export const FEATURE_FLAGS = {
+export const FEATURES = {
   VOICE_MESSAGES: true,
   VIDEO_CALLS: false,
   FILE_SHARING: true,
@@ -269,7 +320,7 @@ export const FEATURE_FLAGS = {
 };
 
 // =============================================================================
-// App Metadata
+// App Configuration
 // =============================================================================
 export const APP_CONFIG = {
   NAME: 'Connexus',
@@ -282,33 +333,6 @@ export const APP_CONFIG = {
   TERMS_URL: '/terms',
 };
 
-// =============================================================================
-// Time & Date Constants
-// =============================================================================
-export const TIME_CONSTANTS = {
-  SECOND: 1000,
-  MINUTE: 60 * 1000,
-  HOUR: 60 * 60 * 1000,
-  DAY: 24 * 60 * 60 * 1000,
-  WEEK: 7 * 24 * 60 * 60 * 1000,
-  MONTH: 30 * 24 * 60 * 60 * 1000,
-  YEAR: 365 * 24 * 60 * 60 * 1000,
-};
-
-export const DATE_FORMATS = {
-  SHORT: 'MMM d',
-  MEDIUM: 'MMM d, yyyy',
-  LONG: 'MMMM d, yyyy',
-  TIME: 'HH:mm',
-  TIME_12: 'h:mm a',
-  DATETIME: 'MMM d, yyyy HH:mm',
-  DATETIME_12: 'MMM d, yyyy h:mm a',
-  ISO: "yyyy-MM-dd'T'HH:mm:ss.SSSxxx",
-};
-
-// =============================================================================
-// Environment Checks
-// =============================================================================
 export const ENV = {
   IS_DEV: import.meta.env.DEV,
   IS_PROD: import.meta.env.PROD,
@@ -318,8 +342,18 @@ export const ENV = {
 };
 
 // =============================================================================
-// Default Export
+// Legacy Exports (for backward compatibility)
 // =============================================================================
+export const TIME_CONSTANTS = TIME.CONSTANTS;
+export const DATE_FORMATS = TIME.FORMATS;
+export const ANIMATION_DURATION = ANIMATION.DURATION;
+export const FILE_TYPES = FILE_CONFIG.TYPES;
+export const FILE_SIZE_LIMITS = FILE_CONFIG.SIZE_LIMITS;
+export const ERROR_CODES = ERROR_CONFIG.CODES;
+export const ERROR_MESSAGES = ERROR_CONFIG.MESSAGES;
+export const FEATURE_FLAGS = FEATURES;
+
+// Default export with organized structure
 export default {
   API_URL,
   SOCKET_URL,
@@ -332,20 +366,17 @@ export default {
   MESSAGE_TYPES,
   MESSAGE_STATUS,
   CONVERSATION_TYPES,
-  REACTION_EMOJIS,
-  FILE_TYPES,
-  FILE_SIZE_LIMITS,
+  EMOJIS,
   ROUTES,
   THEMES,
   BREAKPOINTS,
-  ANIMATION_DURATION,
+  ANIMATION,
   SOCKET_EVENTS,
+  FILE_CONFIG,
+  TIME,
   PAGINATION,
-  ERROR_CODES,
-  ERROR_MESSAGES,
-  FEATURE_FLAGS,
+  ERROR_CONFIG,
+  FEATURES,
   APP_CONFIG,
-  TIME_CONSTANTS,
-  DATE_FORMATS,
   ENV,
 };

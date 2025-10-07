@@ -1,12 +1,12 @@
 /**
- * Chat Page Component
- * Main chat interface with enhanced Layout integration
+ * Chat Page Component - OPTIMIZED WITH UTILITIES
+ * Enhanced with better error handling and state management
  */
-
-import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useSocket } from '../hooks/useSocket';
 import { useChat } from '../hooks/useChat';
+import { formatError } from '../utils/formatters';
+import { ANIMATION } from '../utils/constants';
 import Layout from '../components/ui/Layout';
 import Loading from '../components/ui/Loading';
 import Button from '../components/ui/Button';
@@ -25,6 +25,7 @@ const Chat = () => {
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
+            transition={ANIMATION.SPRING.SMOOTH}
             className="text-center"
           >
             <Loading size="xl" className="mb-6" />
@@ -36,7 +37,7 @@ const Chat = () => {
     );
   }
 
-  // Connection error state
+  // ENHANCED: Connection error with better formatting
   if (connectionError && !isConnected) {
     return (
       <Layout showConnectionStatus={false} backgroundVariant="dark">
@@ -44,17 +45,15 @@ const Chat = () => {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={ANIMATION.SPRING.SMOOTH}
             className="text-center max-w-md"
           >
             <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <span className="text-red-400 text-3xl">⚠️</span>
             </div>
             <h2 className="text-2xl font-bold text-white mb-3">Connection Failed</h2>
-            <p className="text-red-200 mb-6">{connectionError}</p>
-            <Button
-              variant="danger"
-              onClick={() => window.location.reload()}
-            >
+            <p className="text-red-200 mb-6">{formatError(connectionError)}</p>
+            <Button variant="danger" onClick={() => window.location.reload()}>
               Retry Connection
             </Button>
           </motion.div>
@@ -63,7 +62,6 @@ const Chat = () => {
     );
   }
 
-  // Main chat interface
   return (
     <Layout>
       <div className="h-screen flex">
@@ -71,12 +69,9 @@ const Chat = () => {
         <ChatWindow />
       </div>
       
-      {/* Global loading overlay */}
       {isLoading && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          {...ANIMATION.TRANSITIONS.FADE_IN}
           className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-40"
         >
           <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 flex items-center space-x-3 border border-white/20">

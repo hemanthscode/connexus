@@ -1,13 +1,11 @@
 /**
- * Login Page Component
- * Streamlined login with Layout integration
+ * Login Page Component - OPTIMIZED WITH UTILITIES
  */
-
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
-import { ROUTES } from '../utils/constants';
+import { ROUTES, ANIMATION } from '../utils/constants';
 import Layout from '../components/ui/Layout';
 import LoginForm from '../components/auth/LoginForm';
 
@@ -27,15 +25,14 @@ const Login = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          transition={ANIMATION.SPRING.SMOOTH}
           className="w-full max-w-md"
         >
-          {/* Brand Header */}
           <div className="text-center mb-8">
             <motion.h1
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.1, duration: 0.5 }}
+              transition={{ ...ANIMATION.SPRING.SMOOTH, delay: 0.1 }}
               className="text-4xl font-bold text-white mb-2"
             >
               Connexus
@@ -43,13 +40,12 @@ const Login = () => {
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
+              transition={{ ...ANIMATION.SPRING.SMOOTH, delay: 0.2 }}
               className="text-gray-300 text-lg"
             >
               Connect • Chat • Collaborate
             </motion.p>
           </div>
-
           <LoginForm />
         </motion.div>
       </div>

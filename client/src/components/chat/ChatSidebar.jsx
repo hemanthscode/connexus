@@ -1,157 +1,85 @@
 /**
- * Chat Sidebar - CLEAN & MODULAR with Group Support
- * Updated with GroupModal integration
+ * Chat Sidebar - REDESIGNED & STREAMLINED
+ * Modern design patterns, no redundant features, optimal UX
  */
-
-import { useState, useEffect, useRef, memo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  MessageCircle, Settings, LogOut, User, MoreVertical, Search, X, UserPlus, Users
+  Search, X, Plus, Settings, LogOut, User, 
+  Users, MessageCircle, UserPlus, Hash 
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { useChat } from '../../hooks/useChat';
 import { useSocket } from '../../hooks/useSocket';
-import { filterNewUsers } from '../../utils/chatHelpers';
+import { conversationHelpers, userHelpers } from '../../utils/chatHelpers';
 import { ROUTES } from '../../utils/constants';
+import { sanitizers } from '../../utils/validation';
 import Button from '../ui/Button';
+import Input from '../ui/Input';
 import Avatar from '../ui/Avatar';
 import Loading from '../ui/Loading';
 import ConversationItem from './ConversationItem';
-import GroupModal from '../groups/GroupModal'; // Group components import
-
-// CLEAN Search Results Component
-const SearchResults = memo(({ 
-  query, isLoading, conversations, newUsers, activeId, onConversationClick, onUserSelect, getUnreadCount, getTypingText, userId 
-}) => {
-  const totalResults = conversations.length + newUsers.length;
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center py-6">
-        <Loading size="sm" />
-        <p className="text-gray-400 mt-2 text-xs">Searching...</p>
-      </div>
-    );
-  }
-
-  if (totalResults === 0) {
-    return (
-      <div className="text-center py-6">
-        <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-        <p className="text-gray-300 text-sm font-medium">No results</p>
-        <p className="text-gray-500 text-xs">Try different keywords</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {/* Conversations */}
-      {conversations.length > 0 && (
-        <div>
-          <div className="flex items-center space-x-2 mb-2">
-            <MessageCircle className="w-3 h-3 text-blue-400" />
-            <span className="text-xs font-medium text-blue-300">Conversations ({conversations.length})</span>
-          </div>
-          <div className="space-y-1">
-            {conversations.map((conv) => (
-              <ConversationItem
-                key={conv._id}
-                conversation={conv}
-                isActive={activeId === conv._id}
-                unreadCount={getUnreadCount(conv._id)}
-                typingText={getTypingText(conv._id, userId)}
-                onClick={onConversationClick}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* New Users */}
-      {newUsers.length > 0 && (
-        <div>
-          <div className="flex items-center space-x-2 mb-2">
-            <UserPlus className="w-3 h-3 text-green-400" />
-            <span className="text-xs font-medium text-green-300">New Users ({newUsers.length})</span>
-          </div>
-          <div className="space-y-1">
-            {newUsers.map((user) => (
-              <motion.button
-                key={user._id}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => onUserSelect(user)}
-                className="w-full p-3 rounded-xl bg-green-500/10 border border-green-500/20 hover:bg-green-500/15 transition-all"
-              >
-                <div className="flex items-center space-x-3">
-                  <Avatar src={user.avatar} name={user.name} size="lg" />
-                  <div className="flex-1 min-w-0 text-left">
-                    <h4 className="font-medium text-sm text-white truncate">{user.name}</h4>
-                    <p className="text-xs text-gray-400 truncate">{user.email}</p>
-                  </div>
-                  <UserPlus className="w-4 h-4 text-green-400 flex-shrink-0" />
-                </div>
-              </motion.button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-});
-SearchResults.displayName = 'SearchResults';
+import GroupModal from '../groups/GroupModal';
 
 const ChatSidebar = () => {
-  const [filter, setFilter] = useState('all');
-  const [showMenu, setShowMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState({ conversations: [], newUsers: [] });
-  
-  // GROUP MODAL STATE
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   
-  const menuRef = useRef(null);
-  const timeoutRef = useRef(null);
+  const searchTimeout = useRef(null);
+  const userMenuRef = useRef(null);
   
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { 
-    conversations, activeConversationId, setActiveConversation,
-    getUnreadCount, markConversationAsRead, searchUsers, searchResults: apiResults, setTemporaryConversation
+    conversations, activeConversationId, setActiveConversation, getUnreadCount, 
+    markConversationAsRead, searchUsers, searchResults: apiResults, setTemporaryConversation
   } = useChat();
-  const { getTypingIndicatorText } = useSocket();
 
-  // Search Logic
+  // SMART SORTING: Unread conversations first, then by recent activity
+  const smartSortedConversations = useMemo(() => {
+    return [...conversations].sort((a, b) => {
+      const aUnread = getUnreadCount(a._id);
+      const bUnread = getUnreadCount(b._id);
+      
+      // Unread conversations come first
+      if (aUnread > 0 && bUnread === 0) return -1;
+      if (bUnread > 0 && aUnread === 0) return 1;
+      
+      // Within same unread status, sort by recent activity
+      const aTime = a.lastMessage?.timestamp || a.updatedAt || a.createdAt || 0;
+      const bTime = b.lastMessage?.timestamp || b.updatedAt || b.createdAt || 0;
+      return new Date(bTime) - new Date(aTime);
+    });
+  }, [conversations, getUnreadCount, activeConversationId]);
+
+  // TOTAL UNREAD for header badge
+  const totalUnread = useMemo(() => {
+    return smartSortedConversations.reduce((sum, conv) => sum + (getUnreadCount(conv._id) || 0), 0);
+  }, [smartSortedConversations, getUnreadCount, activeConversationId]);
+
+  // ENHANCED SEARCH with debounce
   useEffect(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-    const trimmed = searchQuery.trim();
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
     
-    if (trimmed.length < 2) {
+    const sanitizedQuery = sanitizers.searchQuery(searchQuery);
+    if (sanitizedQuery.length < 2) {
       setIsSearching(false);
       setSearchResults({ conversations: [], newUsers: [] });
       return;
     }
 
     setIsSearching(true);
-
-    timeoutRef.current = setTimeout(async () => {
+    searchTimeout.current = setTimeout(async () => {
       try {
-        await searchUsers(searchQuery);
-        
-        const matchingConversations = conversations.filter(conv => {
-          const name = conv.type === 'group' 
-            ? (conv.name || 'Group Chat')
-            : conv.participants?.find(p => p.user?._id !== user?._id)?.user?.name || 'Unknown';
-          return name.toLowerCase().includes(trimmed.toLowerCase());
+        await searchUsers(sanitizedQuery);
+        setSearchResults({
+          conversations: conversationHelpers.searchConversations(smartSortedConversations, sanitizedQuery, user?._id),
+          newUsers: userHelpers.filterNewUsers(apiResults, conversations, user?._id)
         });
-
-        const newUsers = filterNewUsers(apiResults, conversations, user?._id);
-        
-        setSearchResults({ conversations: matchingConversations, newUsers });
       } catch (error) {
         setSearchResults({ conversations: [], newUsers: [] });
       } finally {
@@ -159,101 +87,138 @@ const ChatSidebar = () => {
       }
     }, 300);
 
-    return () => clearTimeout(timeoutRef.current);
-  }, [searchQuery, searchUsers, conversations, apiResults, user?._id]);
+    return () => clearTimeout(searchTimeout.current);
+  }, [searchQuery, searchUsers, smartSortedConversations, apiResults, user?._id]);
 
-  // Menu close handler
+  // Close user menu on outside click
   useEffect(() => {
     const handleClick = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setShowUserMenu(false);
+      }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const handleConversationClick = (id) => {
+  const handleConversationClick = async (id) => {
     setActiveConversation(id);
-    markConversationAsRead(id);
+    try {
+      await markConversationAsRead(id);
+    } catch (error) {
+      console.error('Failed to mark conversation as read:', error);
+    }
   };
 
-  const handleUserSelect = (selectedUser) => {
-    setTemporaryConversation(selectedUser);
+  const handleNewChat = () => {
     setSearchQuery('');
+    // Focus search to find users
+    document.querySelector('input[placeholder*="Search"]')?.focus();
   };
 
-  // GROUP MODAL HANDLERS
-  const handleGroupCreated = (newGroup) => {
-    setActiveConversation(newGroup._id);
-    setShowGroupModal(false);
-  };
-
-  // Filter conversations
-  const displayConversations = conversations.filter(conv => {
-    if (filter === 'unread') return getUnreadCount(conv._id) > 0;
-    if (filter === 'groups') return conv.type === 'group';
-    return true;
-  });
-
-  const totalUnread = conversations.reduce((sum, conv) => sum + getUnreadCount(conv._id), 0);
   const showSearchResults = searchQuery.length >= 2;
+  const hasSearchResults = searchResults.conversations.length > 0 || searchResults.newUsers.length > 0;
+
+  // USER MENU ACTIONS - Streamlined
+  const userMenuActions = [
+    { key: 'profile', label: 'Profile', icon: User, action: () => navigate(ROUTES.PROFILE) },
+    { key: 'settings', label: 'Settings', icon: Settings, action: () => navigate(ROUTES.SETTINGS) },
+    { key: 'logout', label: 'Sign out', icon: LogOut, action: logout, variant: 'danger' }
+  ];
 
   return (
     <div className="w-80 h-full bg-white/5 backdrop-blur-sm border-r border-white/10 flex flex-col">
-      {/* Header */}
+      
+      {/* STREAMLINED HEADER */}
       <div className="flex-shrink-0 p-4 border-b border-white/10">
         <div className="flex items-center justify-between">
+          {/* App Title + Unread Badge */}
           <div className="flex items-center space-x-3">
             <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
               Connexus
             </h1>
-            {totalUnread > 0 && (
-              <div className="bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] h-[20px] flex items-center justify-center px-2">
-                {totalUnread > 99 ? '99+' : totalUnread}
-              </div>
-            )}
+            <AnimatePresence>
+              {totalUnread > 0 && (
+                <motion.div
+                  key={totalUnread}
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  className="bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] h-[20px] flex items-center justify-center px-2"
+                >
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           
+          {/* Quick Actions */}
           <div className="flex items-center space-x-2">
-            {/* NEW GROUP BUTTON */}
+            {/* New Chat */}
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleNewChat}
+              className="p-2" 
+              title="New chat"
+            >
+              <MessageCircle className="w-4 h-4" />
+            </Button>
+            
+            {/* New Group */}
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={() => setShowGroupModal(true)}
-              className="p-2"
-              title="Create New Group"
+              className="p-2" 
+              title="New group"
             >
               <Users className="w-4 h-4" />
             </Button>
             
-            <div className="relative" ref={menuRef}>
-              <Button variant="ghost" size="sm" onClick={() => setShowMenu(!showMenu)} className="p-2">
-                <MoreVertical className="w-4 h-4" />
+            {/* User Menu */}
+            <div className="relative" ref={userMenuRef}>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="p-1"
+              >
+                <Avatar
+                  src={user?.avatar}
+                  name={user?.name}
+                  size="sm"
+                  className="border border-white/20"
+                />
               </Button>
               
               <AnimatePresence>
-                {showMenu && (
+                {showUserMenu && (
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="absolute right-0 top-full mt-2 w-44 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl shadow-xl z-50 overflow-hidden"
+                    initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                    className="absolute right-0 top-full mt-2 w-48 bg-gray-900/95 backdrop-blur border border-white/20 rounded-xl shadow-xl z-50 overflow-hidden"
                   >
-                    {[
-                      { key: 'profile', label: 'Profile', icon: User, action: () => navigate(ROUTES.PROFILE) },
-                      { key: 'newGroup', label: 'New Group', icon: Users, action: () => setShowGroupModal(true) },
-                      { key: 'settings', label: 'Settings', icon: Settings, action: () => navigate(ROUTES.SETTINGS) },
-                      { key: 'logout', label: 'Logout', icon: LogOut, action: logout, danger: true }
-                    ].map(({ key, label, icon: Icon, action, danger }) => (
-                      <button
+                    {/* User Info */}
+                    <div className="px-4 py-3 border-b border-white/10">
+                      <p className="text-sm font-medium text-white truncate">{user?.name}</p>
+                      <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+                    </div>
+                    
+                    {/* Menu Actions */}
+                    {userMenuActions.map(({ key, label, icon: Icon, action, variant }) => (
+                      <Button
                         key={key}
-                        onClick={() => { setShowMenu(false); action(); }}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 text-sm transition-colors text-left ${
-                          danger ? 'hover:bg-red-500/20 text-red-300' : 'hover:bg-white/10 text-white'
+                        variant="ghost"
+                        onClick={() => { setShowUserMenu(false); action(); }}
+                        className={`w-full justify-start px-4 py-3 text-sm rounded-none ${
+                          variant === 'danger' ? 'hover:bg-red-500/20 text-red-300' : 'hover:bg-white/10'
                         }`}
+                        leftIcon={<Icon className="w-4 h-4" />}
                       >
-                        <Icon className="w-4 h-4" />
-                        <span>{label}</span>
-                      </button>
+                        {label}
+                      </Button>
                     ))}
                   </motion.div>
                 )}
@@ -263,131 +228,181 @@ const ChatSidebar = () => {
         </div>
       </div>
 
-      {/* Search */}
+      {/* ENHANCED SEARCH */}
       <div className="flex-shrink-0 p-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search conversations and users..."
-            className="w-full bg-white/10 border border-white/20 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-          />
-          {searchQuery && (
-            <button
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search conversations and users..."
+          icon={<Search className="w-4 h-4" />}
+          rightIcon={searchQuery && (
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+              className="p-1"
             >
               <X className="w-4 h-4" />
-            </button>
+            </Button>
           )}
-        </div>
+          className="transition-all focus-within:ring-2 focus-within:ring-blue-500/30"
+        />
       </div>
 
-      {/* Filter Tabs */}
-      {!showSearchResults && (
-        <div className="flex-shrink-0 px-4 pb-2">
-          <div className="flex bg-white/5 rounded-lg p-1">
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'unread', label: 'Unread', count: totalUnread },
-              { key: 'groups', label: 'Groups' }
-            ].map(({ key, label, count }) => (
-              <button
-                key={key}
-                onClick={() => setFilter(key)}
-                className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-all flex items-center justify-center space-x-2 ${
-                  filter === key ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <span>{label}</span>
-                {count > 0 && key === 'unread' && (
-                  <div className="bg-red-500 text-white text-xs rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1">
-                    {count > 9 ? '9+' : count}
+      {/* MAIN CONTENT */}
+      <div className="flex-1 min-h-0 px-4 pb-4">
+        {showSearchResults ? (
+          /* SEARCH RESULTS */
+          <div className="space-y-4">
+            {isSearching ? (
+              <Loading size="sm" text="Searching..." className="py-8" />
+            ) : !hasSearchResults ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Search className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-gray-300 font-medium mb-2">No results found</h3>
+                <p className="text-gray-500 text-sm">Try different keywords or check spelling</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Existing Conversations */}
+                {searchResults.conversations.length > 0 && (
+                  <div>
+                    <div className="flex items-center space-x-2 mb-3">
+                      <MessageCircle className="w-4 h-4 text-blue-400" />
+                      <span className="text-sm font-medium text-blue-300">
+                        Conversations ({searchResults.conversations.length})
+                      </span>
+                      <div className="flex-1 h-px bg-blue-500/20" />
+                    </div>
+                    <div className="space-y-1">
+                      <AnimatePresence>
+                        {searchResults.conversations.map((conv) => (
+                          <ConversationItem
+                            key={conv._id}
+                            conversation={conv}
+                            isActive={activeConversationId === conv._id}
+                            unreadCount={getUnreadCount(conv._id)}
+                            onClick={handleConversationClick}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </div>
                   </div>
                 )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Content Area */}
-      <div className="flex-1 min-h-0 px-4">
-        {showSearchResults ? (
-          <SearchResults
-            query={searchQuery}
-            isLoading={isSearching}
-            conversations={searchResults.conversations}
-            newUsers={searchResults.newUsers}
-            activeId={activeConversationId}
-            onConversationClick={handleConversationClick}
-            onUserSelect={handleUserSelect}
-            getUnreadCount={getUnreadCount}
-            getTypingText={getTypingIndicatorText}
-            userId={user?._id}
-          />
+                {/* New Users */}
+                {searchResults.newUsers.length > 0 && (
+                  <div>
+                    <div className="flex items-center space-x-2 mb-3">
+                      <UserPlus className="w-4 h-4 text-green-400" />
+                      <span className="text-sm font-medium text-green-300">
+                        People ({searchResults.newUsers.length})
+                      </span>
+                      <div className="flex-1 h-px bg-green-500/20" />
+                    </div>
+                    <div className="space-y-2">
+                      <AnimatePresence>
+                        {searchResults.newUsers.map((user) => (
+                          <motion.div
+                            key={user._id}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 20 }}
+                          >
+                            <Button
+                              variant="ghost"
+                              onClick={() => { 
+                                setTemporaryConversation(user); 
+                                setSearchQuery(''); 
+                              }}
+                              className="w-full p-3 rounded-xl bg-green-500/5 border border-green-500/20 hover:bg-green-500/10 justify-start"
+                            >
+                              <div className="flex items-center space-x-3 w-full">
+                                <Avatar src={user.avatar} name={user.name} size="md" />
+                                <div className="flex-1 text-left">
+                                  <h4 className="font-medium text-sm text-white truncate">{user.name}</h4>
+                                  <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                                </div>
+                                <MessageCircle className="w-4 h-4 text-green-400" />
+                              </div>
+                            </Button>
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         ) : (
+          /* CONVERSATION LIST */
           <div className="h-full flex flex-col">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-gray-300">Messages</h2>
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-300">Chats</h2>
               <div className="flex items-center space-x-2">
-                <span className="text-xs text-gray-400">({displayConversations.length})</span>
-                {filter === 'groups' && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => setShowGroupModal(true)}
-                    className="text-xs text-blue-400 hover:text-blue-300"
-                  >
-                    + New
-                  </Button>
+                <span className="text-xs text-gray-400">({smartSortedConversations.length})</span>
+                {totalUnread > 0 && (
+                  <span className="text-xs text-blue-400 font-medium">
+                    {totalUnread} unread
+                  </span>
                 )}
               </div>
             </div>
 
-            <div className="flex-1 space-y-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
-              <AnimatePresence>
-                {displayConversations.map((conversation) => (
-                  <ConversationItem 
-                    key={conversation._id}
-                    conversation={conversation}
-                    isActive={activeConversationId === conversation._id}
-                    unreadCount={getUnreadCount(conversation._id)}
-                    typingText={getTypingIndicatorText(conversation._id, user?._id)}
-                    onClick={handleConversationClick}
-                  />
-                ))}
-              </AnimatePresence>
-
-              {displayConversations.length === 0 && (
+            {/* Conversations */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+              {smartSortedConversations.length > 0 ? (
+                <div className="space-y-1">
+                  <AnimatePresence initial={false}>
+                    {smartSortedConversations.map((conversation) => (
+                      <motion.div
+                        key={conversation._id}
+                        layout
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <ConversationItem 
+                          conversation={conversation}
+                          isActive={activeConversationId === conversation._id}
+                          unreadCount={getUnreadCount(conversation._id)}
+                          onClick={handleConversationClick}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              ) : (
+                /* SMART EMPTY STATE */
                 <div className="text-center py-12">
-                  <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    {filter === 'groups' ? (
-                      <Users className="w-8 h-8 text-gray-400" />
-                    ) : (
-                      <MessageCircle className="w-8 h-8 text-gray-400" />
-                    )}
+                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <MessageCircle className="w-10 h-10 text-blue-400" />
                   </div>
-                  <h3 className="text-gray-300 font-medium mb-2">
-                    {filter === 'groups' ? 'No groups yet' : 'No conversations'}
-                  </h3>
-                  <p className="text-gray-500 text-sm mb-4">
-                    {filter === 'groups' 
-                      ? 'Create a group to start collaborating'
-                      : 'Search for users to start chatting'
-                    }
+                  <h3 className="text-xl font-semibold text-white mb-2">Welcome to Connexus</h3>
+                  <p className="text-gray-400 text-sm mb-6 max-w-sm mx-auto leading-relaxed">
+                    Start a conversation by searching for people or create a group to collaborate.
                   </p>
-                  {filter === 'groups' && (
-                    <Button
-                      variant="primary"
-                      size="sm"
+                  <div className="flex flex-col space-y-3 max-w-xs mx-auto">
+                    <Button 
+                      variant="primary" 
+                      onClick={handleNewChat}
+                      leftIcon={<MessageCircle className="w-4 h-4" />}
+                    >
+                      Start a chat
+                    </Button>
+                    <Button 
+                      variant="secondary" 
                       onClick={() => setShowGroupModal(true)}
                       leftIcon={<Users className="w-4 h-4" />}
                     >
-                      Create Group
+                      Create group
                     </Button>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
@@ -399,8 +414,10 @@ const ChatSidebar = () => {
       <GroupModal
         isOpen={showGroupModal}
         onClose={() => setShowGroupModal(false)}
-        onGroupCreated={handleGroupCreated}
-        group={null} // Always null for new group creation in sidebar
+        onGroupCreated={(newGroup) => {
+          setActiveConversation(newGroup._id);
+          setShowGroupModal(false);
+        }}
       />
     </div>
   );

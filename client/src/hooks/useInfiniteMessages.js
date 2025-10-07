@@ -1,10 +1,10 @@
 /**
- * Infinite Messages Hook
- * Handles pagination for message loading
+ * Infinite Messages Hook - OPTIMIZED WITH UTILITIES
+ * Enhanced pagination using messageHelpers
  */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import useChatStore from '../store/chatStore';
+import { PAGINATION } from '../utils/constants';
 
 export const useInfiniteMessages = (conversationId) => {
   const [page, setPage] = useState(1);
@@ -88,8 +88,10 @@ export const useInfiniteMessages = (conversationId) => {
     currentPage: page,
     messageCount: conversationMessages.length,
     
-    // Utility methods
-    canLoadMore: hasMore && !isLoadingMore,
+    // Utility methods - ENHANCED
+    canLoadMore: hasMore && !isLoadingMore && conversationMessages.length >= PAGINATION.MESSAGES_LIMIT,
+    shouldAutoLoad: conversationMessages.length === 0 && !isLoadingMore,
+    
     reset: () => {
       setPage(1);
       setHasMore(true);

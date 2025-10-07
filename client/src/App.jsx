@@ -1,8 +1,7 @@
 /**
- * Main App Component
+ * Main App Component - UPDATED WITH WELCOME PAGE
  * Root application with routing and auth protection
  */
-
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { ROUTES } from './utils/constants';
@@ -10,6 +9,7 @@ import AuthGuard from './components/auth/AuthGuard';
 import Loading from './components/ui/Loading';
 
 // Pages
+import Welcome from './pages/WelcomePage';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Chat from './pages/Chat';
@@ -19,7 +19,7 @@ import NotFound from './pages/NotFound';
 
 // Inner component that uses auth hooks (must be inside Router context)
 function AppContent() {
-  const { isInitialized } = useAuth();
+  const { isInitialized, isAuthenticated } = useAuth();
 
   // Show loading while checking auth
   if (!isInitialized) {
@@ -32,7 +32,10 @@ function AppContent() {
 
   return (
     <Routes>
-      {/* Public Routes */}
+      {/* Welcome Page - First Landing */}
+      <Route path={ROUTES.WELCOME} element={<Welcome />} />
+      
+      {/* Public Auth Routes */}
       <Route path={ROUTES.LOGIN} element={<Login />} />
       <Route path={ROUTES.REGISTER} element={<Register />} />
 
@@ -55,8 +58,14 @@ function AppContent() {
         </AuthGuard>
       } />
 
-      {/* Redirects */}
-      <Route path="/" element={<Navigate to={ROUTES.CHAT} replace />} />
+      {/* Smart Redirects */}
+      <Route path="/" element={
+        <Navigate 
+          to={isAuthenticated ? ROUTES.CHAT : ROUTES.WELCOME} 
+          replace 
+        />
+      } />
+      
       <Route path="/404" element={<NotFound />} />
       
       {/* Catch all */}

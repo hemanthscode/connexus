@@ -1,70 +1,54 @@
 /**
- * Conversation Info Hook
- * Centralized conversation data extraction and formatting
+ * Conversation Info Hook - OPTIMAL
  */
-
 import { useMemo } from 'react';
 import { useAuth } from './useAuth';
 import { useSocket } from './useSocket';
+import { conversationHelpers, userHelpers, messageHelpers } from '../utils/chatHelpers';
 
 export const useConversationInfo = (conversation) => {
   const { user } = useAuth();
-  const { isUserOnline } = useSocket();
+  const { isUserOnline, getTypingUsers } = useSocket();
 
-  const conversationInfo = useMemo(() => {
+  const info = useMemo(() => {
     if (!conversation) {
-      return {
-        name: 'Select a conversation',
-        avatar: null,
-        isOnline: false,
-        otherParticipant: null,
-        status: 'Unknown',
-        type: null,
-      };
+      return { name: 'Select a conversation', avatar: null, isOnline: false, status: 'Unknown', type: null, userId: null };
     }
 
-    // Group conversation
+    const name = conversationHelpers.getConversationName(conversation, user?._id);
+    const avatar = conversationHelpers.getConversationAvatar(conversation, user?._id);
+
     if (conversation.type === 'group') {
+      const typingUsers = getTypingUsers(conversation._id);
       return {
-        name: conversation.name || 'Group Chat',
-        avatar: conversation.avatar,
-        isOnline: false,
-        otherParticipant: null,
-        status: `${conversation.participants?.length || 0} members`,
-        type: 'group',
+        name, avatar, isOnline: false, type: 'group', userId: null,
+        status: typingUsers.length > 0 ? `${typingUsers.length} typing...` : `${conversation.participants?.length || 0} members`,
       };
     }
 
-    // Direct conversation
-    const otherParticipant = conversation.participants?.find(
-      p => p.user?._id !== user?._id
-    );
-
-    const isOnline = otherParticipant ? isUserOnline(otherParticipant.user._id) : false;
+    const otherParticipant = conversation.participants?.find(p => !userHelpers.isSameUser(p.user, user));
+    const otherUser = userHelpers.getUserDetails(otherParticipant?.user);
+    const isOnline = isUserOnline(otherUser._id);
+    const isTyping = getTypingUsers(conversation._id).some(u => userHelpers.isSameUser(u, { _id: otherUser._id }));
 
     return {
-      name: otherParticipant?.user?.name || 'Unknown User',
-      avatar: otherParticipant?.user?.avatar,
+      name: otherUser.name,
+      avatar: otherUser.avatar,
       isOnline,
-      otherParticipant,
-      status: isOnline ? 'Online' : 'Offline',
+      status: isTyping ? 'typing...' : (isOnline ? 'Online' : 'Offline'),
       type: 'direct',
+      userId: otherUser._id,
     };
-  }, [conversation, user, isUserOnline]);
+  }, [conversation, user, isUserOnline, getTypingUsers]);
 
   const getLastMessagePreview = useMemo(() => {
     if (!conversation?.lastMessage?.content) return 'No messages yet';
-    
-    const content = conversation.lastMessage.content;
-    const isOwn = conversation.lastMessage.sender?._id === user?._id;
-    
-    return isOwn ? `You: ${content}` : content;
+    const preview = messageHelpers.getMessagePreview(conversation.lastMessage);
+    const isOwn = userHelpers.isSameUser(conversation.lastMessage.sender, user);
+    return isOwn ? `You: ${preview}` : preview;
   }, [conversation?.lastMessage, user]);
 
-  return {
-    ...conversationInfo,
-    getLastMessagePreview,
-  };
+  return { ...info, getLastMessagePreview };
 };
 
 export default useConversationInfo;

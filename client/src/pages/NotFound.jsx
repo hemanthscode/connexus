@@ -1,12 +1,10 @@
 /**
- * 404 Not Found Page Component
- * Enhanced error page with Layout integration
+ * 404 Not Found Page - OPTIMIZED WITH UTILITIES
  */
-
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, ArrowLeft, Home } from 'lucide-react';
-import { ROUTES } from '../utils/constants';
+import { MessageCircle, ArrowLeft } from 'lucide-react';
+import { ROUTES, ANIMATION } from '../utils/constants';
 import Layout from '../components/ui/Layout';
 import Button from '../components/ui/Button';
 
@@ -19,10 +17,9 @@ const NotFound = () => {
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
+          transition={ANIMATION.SPRING.SMOOTH}
           className="text-center max-w-md"
         >
-          {/* Animated 404 Icon */}
           <motion.div
             animate={{ 
               rotateY: [0, 360],
@@ -41,7 +38,7 @@ const NotFound = () => {
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ ...ANIMATION.SPRING.SMOOTH, delay: 0.2 }}
             className="text-6xl font-bold text-white mb-4"
           >
             404
@@ -50,7 +47,7 @@ const NotFound = () => {
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
+            transition={{ ...ANIMATION.SPRING.SMOOTH, delay: 0.3 }}
             className="text-2xl font-semibold text-gray-200 mb-2"
           >
             Page Not Found
@@ -59,18 +56,17 @@ const NotFound = () => {
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
+            transition={{ ...ANIMATION.SPRING.SMOOTH, delay: 0.4 }}
             className="text-gray-400 mb-8"
           >
             The page you're looking for doesn't exist or has been moved. 
             Let's get you back to chatting!
           </motion.p>
 
-          {/* Action Buttons */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
+            transition={{ ...ANIMATION.SPRING.SMOOTH, delay: 0.5 }}
             className="flex flex-col sm:flex-row gap-4 justify-center"
           >
             <Button
@@ -90,11 +86,10 @@ const NotFound = () => {
             </Button>
           </motion.div>
 
-          {/* Help Text */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
+            transition={{ ...ANIMATION.SPRING.SMOOTH, delay: 0.6 }}
             className="mt-12 text-gray-500 text-sm"
           >
             <p>Need help? Contact our support team.</p>

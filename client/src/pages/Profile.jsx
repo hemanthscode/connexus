@@ -1,39 +1,111 @@
+/**
+ * Profile Page - ULTRA OPTIMIZED & STREAMLINED
+ * Maximum reuse of existing components, modern UX patterns
+ */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  User, Phone, MapPin, Edit2, Check, X, ArrowLeft,
-  Twitter, Instagram, Linkedin, Github, Mail
+  User, Phone, MapPin, Edit2, ArrowLeft, Camera, Mail,
+  Twitter, Instagram, Linkedin, Github, ExternalLink
 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import { authService } from '../services/auth';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import Avatar from '../components/ui/Avatar';
+import Loading from '../components/ui/Loading';
+import Modal from '../components/ui/Modal';
 import toast from 'react-hot-toast';
 
 const SOCIAL_PLATFORMS = {
-  twitter: { icon: Twitter, label: 'Twitter', color: '#1DA1F2' },
-  linkedin: { icon: Linkedin, label: 'LinkedIn', color: '#0A66C2' },  
-  github: { icon: Github, label: 'GitHub', color: '#333' },
-  instagram: { icon: Instagram, label: 'Instagram', color: '#E4405F' }
+  twitter: { icon: Twitter, label: 'Twitter', color: '#1DA1F2', placeholder: 'https://twitter.com/username' },
+  linkedin: { icon: Linkedin, label: 'LinkedIn', color: '#0A66C2', placeholder: 'https://linkedin.com/in/username' },  
+  github: { icon: Github, label: 'GitHub', color: '#333333', placeholder: 'https://github.com/username' },
+  instagram: { icon: Instagram, label: 'Instagram', color: '#E4405F', placeholder: 'https://instagram.com/username' }
+};
+
+// OPTIMIZED: Reusable Info Card Component
+const InfoCard = ({ icon: Icon, label, value, iconColor = 'text-blue-400' }) => (
+  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+    <div className="flex items-center space-x-3 mb-2">
+      <Icon className={`w-5 h-5 ${iconColor}`} />
+      <span className="text-sm font-medium text-gray-300">{label}</span>
+    </div>
+    <p className="text-white font-medium">{value || 'Not provided'}</p>
+  </div>
+);
+
+// OPTIMIZED: Social Link Item Component
+const SocialLinkItem = ({ platform, config, url, isEditing, onChange, disabled }) => {
+  const IconComponent = config.icon;
+  
+  if (isEditing) {
+    return (
+      <div>
+        <label className="flex items-center space-x-2 text-xs font-medium text-gray-300 mb-2">
+          <IconComponent className="w-4 h-4" style={{ color: config.color }} />
+          <span>{config.label}</span>
+        </label>
+        <Input
+          type="url"
+          value={url || ''}
+          onChange={(e) => onChange(platform, e.target.value)}
+          disabled={disabled}
+          placeholder={config.placeholder}
+          variant="default"
+        />
+      </div>
+    );
+  }
+
+  const hasLink = Boolean(url);
+  
+  return (
+    <a
+      href={hasLink ? url : '#'}
+      target={hasLink ? "_blank" : undefined}
+      rel={hasLink ? "noopener noreferrer" : undefined}
+      onClick={(e) => !hasLink && e.preventDefault()}
+      className={`aspect-square rounded-lg flex items-center justify-center transition-all ${
+        hasLink 
+          ? 'bg-white/10 hover:bg-white/20 cursor-pointer border border-white/20' 
+          : 'bg-white/5 opacity-40 cursor-not-allowed border border-white/10'
+      }`}
+      title={config.label}
+    >
+      <IconComponent 
+        className="w-5 h-5" 
+        style={{ color: hasLink ? config.color : '#9ca3af' }} 
+      />
+    </a>
+  );
 };
 
 const ProfilePage = () => {
   const { user } = useAuthStore();
-  const [displayUser, setDisplayUser] = useState(user);
   const [isEditing, setIsEditing] = useState(false);
-  const [isLocalLoading, setIsLocalLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
-  const [formData, setFormData] = useState(() => ({
+  const [formData, setFormData] = useState({
     name: user?.name || '',
     phone: user?.phone || '',
     bio: user?.bio || '',
     location: user?.location || '',
     socialLinks: user?.socialLinks || {}
-  }));
+  });
 
+  // Update form data when user changes
   useEffect(() => {
-    if (user && !isLocalLoading) {
-      setDisplayUser(user);
+    if (user) {
+      setFormData({
+        name: user.name || '',
+        phone: user.phone || '',
+        bio: user.bio || '',
+        location: user.location || '',
+        socialLinks: user.socialLinks || {}
+      });
     }
-  }, [user, isLocalLoading]);
+  }, [user]);
 
   const handleInputChange = useCallback((field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -46,345 +118,380 @@ const ProfilePage = () => {
     }));
   }, []);
 
+  // Simple validation
+  const validateForm = () => {
+    if (!formData.name?.trim()) {
+      toast.error('Name is required');
+      return false;
+    }
+    if (formData.name.length < 2) {
+      toast.error('Name must be at least 2 characters');
+      return false;
+    }
+    if (formData.name.length > 50) {
+      toast.error('Name must be less than 50 characters');
+      return false;
+    }
+    if (formData.bio && formData.bio.length > 200) {
+      toast.error('Bio must be less than 200 characters');
+      return false;
+    }
+    return true;
+  };
+
   const cleanFormData = useCallback((data) => {
-    const cleaned = { ...data };
-    if (cleaned.socialLinks) {
-      const filteredSocialLinks = {};
-      Object.entries(cleaned.socialLinks).forEach(([platform, url]) => {
+    const cleaned = {
+      name: data.name?.trim() || '',
+      phone: data.phone?.trim() || '',
+      bio: data.bio?.trim() || '',
+      location: data.location?.trim() || '',
+      socialLinks: {}
+    };
+    
+    // Clean social links
+    if (data.socialLinks) {
+      Object.entries(data.socialLinks).forEach(([platform, url]) => {
         if (url && url.trim()) {
-          filteredSocialLinks[platform] = url.trim();
+          cleaned.socialLinks[platform] = url.trim();
         }
       });
-      cleaned.socialLinks = filteredSocialLinks;
     }
+    
     return cleaned;
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!formData.name?.trim()) {
-      toast.error('Name is required');
-      return;
-    }
+    if (!validateForm()) return;
 
     const cleanedData = cleanFormData(formData);
-    setIsLocalLoading(true);
+    setIsLoading(true);
     
-    const originalDisplayUser = displayUser;
-    const optimisticUser = { ...displayUser, ...cleanedData, updatedAt: new Date().toISOString() };
-    setDisplayUser(optimisticUser);
-    setIsEditing(false);
-
     try {
       const result = await authService.updateProfile(cleanedData);
       
       if (result.success) {
         useAuthStore.getState().setUser(result.data);
         toast.success('Profile updated successfully');
+        setIsEditing(false);
       } else {
         throw new Error(result.message || 'Update failed');
       }
     } catch (error) {
-      setDisplayUser(originalDisplayUser);
-      setIsEditing(true);
-      
       let errorMessage = 'Failed to update profile';
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
       toast.error(errorMessage);
     } finally {
-      setIsLocalLoading(false);
+      setIsLoading(false);
     }
-  }, [formData, displayUser, cleanFormData]);
+  }, [formData, cleanFormData]);
 
   const handleCancel = useCallback(() => {
     setFormData({
-      name: displayUser?.name || '',
-      phone: displayUser?.phone || '',
-      bio: displayUser?.bio || '',
-      location: displayUser?.location || '',
-      socialLinks: displayUser?.socialLinks || {}
+      name: user?.name || '',
+      phone: user?.phone || '',
+      bio: user?.bio || '',
+      location: user?.location || '',
+      socialLinks: user?.socialLinks || {}
     });
     setIsEditing(false);
-  }, [displayUser]);
-
-  const handleBack = () => {
-    window.history.back();
-  };
-
-  useEffect(() => {
-    if (displayUser && !isEditing && !isLocalLoading) {
-      setFormData({
-        name: displayUser.name || '',
-        phone: displayUser.phone || '',
-        bio: displayUser.bio || '',
-        location: displayUser.location || '',
-        socialLinks: displayUser.socialLinks || {}
-      });
-    }
-  }, [displayUser?.name, displayUser?.phone, displayUser?.bio, displayUser?.location, displayUser?.socialLinks, isEditing, isLocalLoading]);
+  }, [user]);
 
   const hasChanges = useMemo(() => {
-    if (!displayUser) return false;
+    if (!user) return false;
     return (
-      formData.name !== (displayUser.name || '') ||
-      formData.phone !== (displayUser.phone || '') ||
-      formData.bio !== (displayUser.bio || '') ||
-      formData.location !== (displayUser.location || '') ||
-      JSON.stringify(formData.socialLinks) !== JSON.stringify(displayUser.socialLinks || {})
+      formData.name !== (user.name || '') ||
+      formData.phone !== (user.phone || '') ||
+      formData.bio !== (user.bio || '') ||
+      formData.location !== (user.location || '') ||
+      JSON.stringify(formData.socialLinks) !== JSON.stringify(user.socialLinks || {})
     );
-  }, [formData, displayUser]);
+  }, [formData, user]);
 
-  if (!displayUser) {
+  if (!user) {
     return (
-      <div className="h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600 text-lg">Loading...</div>
+      <div className="h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex items-center justify-center">
+        <Loading size="lg" text="Loading profile..." />
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      {/* Fixed Header */}
-      <header className="flex-shrink-0 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+    <div className="h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 flex flex-col overflow-hidden">
+      
+      {/* STREAMLINED HEADER */}
+      <div className="flex-shrink-0 bg-black/20 backdrop-blur-sm border-b border-white/10">
+        <div className="px-6 py-4 flex items-center justify-between">
+          <Button
+            variant="ghost"
+            onClick={() => window.history.back()}
+            leftIcon={<ArrowLeft className="w-5 h-5" />}
+            className="text-gray-300 hover:text-white"
           >
-            <ArrowLeft className="w-5 h-5" />
-            <span className="font-medium hidden sm:inline">Back</span>
-          </button>
+            Back
+          </Button>
           
-          <h1 className="text-lg font-semibold text-gray-900">Profile</h1>
+          <h1 className="text-xl font-bold text-white">Profile Settings</h1>
           
-          <div className="w-16 sm:w-20 flex justify-end">
-            {isLocalLoading && (
-              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            )}
+          <div className="w-20 flex justify-end">
+            {isLoading && <Loading size="sm" />}
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Main Grid Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
-            {/* Left Column - Profile Card */}
-            <div className="lg:col-span-1">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col items-center text-center h-full">
-                {/* Avatar */}
-                <div className="relative mb-4">
-                  <img
-                    src={displayUser.avatar || `https://ui-avatars.com/api/?name=${displayUser.name}&background=3b82f6&color=ffffff&size=200`}
-                    alt={displayUser.name}
-                    className="w-28 h-28 rounded-full object-cover ring-4 ring-blue-50"
-                  />
-                  <div className="absolute bottom-0 right-0 w-5 h-5 bg-green-500 rounded-full border-4 border-white" />
-                </div>
+      {/* MAIN CONTENT */}
+      <div className="flex-1 flex p-6 gap-6 min-h-0">
+        
+        {/* LEFT PANEL - Profile Card */}
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="w-80 bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 p-6 flex flex-col"
+        >
+          {/* OPTIMIZED: Avatar Section using Avatar component */}
+          <div className="text-center mb-6">
+            <div className="relative inline-block mb-4">
+              <Avatar
+                src={user.avatar}
+                name={user.name}
+                size="2xl"
+                className="ring-4 ring-blue-500/30"
+              />
+              <div className="absolute bottom-2 right-2 w-6 h-6 bg-green-500 rounded-full border-4 border-white/20" />
+              <Button
+                variant="primary"
+                size="xs"
+                className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full p-0"
+                title="Change photo"
+              >
+                <Camera className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <h2 className="text-xl font-bold text-white mb-1">{user.name}</h2>
+            <div className="flex items-center justify-center space-x-2 text-gray-300 mb-6">
+              <Mail className="w-4 h-4" />
+              <span className="text-sm truncate">{user.email}</span>
+            </div>
 
-                {/* Name & Email */}
-                <h2 className="text-2xl font-bold text-gray-900 mb-1">{displayUser.name}</h2>
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-6">
-                  <Mail className="w-4 h-4" />
-                  <span className="truncate">{displayUser.email}</span>
-                </div>
-
-                {/* Edit Button */}
-                {!isEditing ? (
-                  <button
+            {/* OPTIMIZED: Action Buttons using Button component */}
+            <AnimatePresence mode="wait">
+              {!isEditing ? (
+                <motion.div
+                  key="edit"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                >
+                  <Button
+                    variant="primary"
                     onClick={() => setIsEditing(true)}
-                    disabled={isLocalLoading}
-                    className="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    disabled={isLoading}
+                    leftIcon={<Edit2 className="w-4 h-4" />}
+                    className="w-full"
                   >
-                    <Edit2 className="w-4 h-4" />
                     Edit Profile
-                  </button>
-                ) : (
-                  <div className="w-full flex gap-2">
-                    <button
-                      onClick={handleCancel}
-                      disabled={isLocalLoading}
-                      className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <X className="w-4 h-4" />
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSave}
-                      disabled={!hasChanges || isLocalLoading}
-                      className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <Check className="w-4 h-4" />
-                      Save
-                    </button>
-                  </div>
-                )}
-
-                {/* Social Icons */}
-                <div className="w-full mt-6 pt-6 border-t border-gray-200">
-                  <div className="grid grid-cols-4 gap-3">
-                    {Object.entries(SOCIAL_PLATFORMS).map(([platform, config]) => {
-                      const IconComponent = config.icon;
-                      const hasLink = displayUser.socialLinks?.[platform];
-                      
-                      return (
-                        <a
-                          key={platform}
-                          href={hasLink || '#'}
-                          target={hasLink ? "_blank" : undefined}
-                          rel={hasLink ? "noopener noreferrer" : undefined}
-                          onClick={(e) => !hasLink && e.preventDefault()}
-                          className={`flex items-center justify-center w-full aspect-square rounded-xl transition-all ${
-                            hasLink 
-                              ? 'bg-gray-50 hover:bg-gray-100 cursor-pointer' 
-                              : 'bg-gray-50 opacity-40 cursor-not-allowed'
-                          }`}
-                          title={config.label}
-                        >
-                          <IconComponent className="w-5 h-5" style={{ color: hasLink ? config.color : '#9ca3af' }} />
-                        </a>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column - Information */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Bio Section */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-base font-semibold text-gray-900 mb-3">About</h3>
-                {isEditing ? (
-                  <div>
-                    <textarea
-                      value={formData.bio}
-                      onChange={(e) => handleInputChange('bio', e.target.value)}
-                      disabled={isLocalLoading}
-                      rows={3}
-                      maxLength={200}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                      placeholder="Write something about yourself..."
-                    />
-                    <div className="mt-1 text-xs text-gray-500 text-right">{formData.bio?.length || 0}/200</div>
-                  </div>
-                ) : (
-                  <p className="text-gray-600 text-sm leading-relaxed">{displayUser.bio || 'No bio yet'}</p>
-                )}
-              </div>
-
-              {/* Contact Information */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-base font-semibold text-gray-900 mb-4">Contact Information</h3>
-                
-                <div className="space-y-4">
-                  {/* Name */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-2">Full Name</label>
-                    {isEditing ? (
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="text"
-                          value={formData.name}
-                          onChange={(e) => handleInputChange('name', e.target.value)}
-                          disabled={isLocalLoading}
-                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Your name"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl">
-                        <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-sm text-gray-900">{displayUser.name}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Phone */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-2">Phone Number</label>
-                    {isEditing ? (
-                      <div className="relative">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="tel"
-                          value={formData.phone}
-                          onChange={(e) => handleInputChange('phone', e.target.value)}
-                          disabled={isLocalLoading}
-                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="+1 (555) 000-0000"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl">
-                        <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-sm text-gray-900">{displayUser.phone || 'Not set'}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Location */}
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-2">Location</label>
-                    {isEditing ? (
-                      <div className="relative">
-                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="text"
-                          value={formData.location}
-                          onChange={(e) => handleInputChange('location', e.target.value)}
-                          disabled={isLocalLoading}
-                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="City, Country"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3 px-3 py-2.5 bg-gray-50 rounded-xl">
-                        <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                        <span className="text-sm text-gray-900">{displayUser.location || 'Not set'}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Social Links - Edit Mode Only */}
-              {isEditing && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                  <h3 className="text-base font-semibold text-gray-900 mb-4">Social Links</h3>
-                  
-                  <div className="space-y-3">
-                    {Object.entries(SOCIAL_PLATFORMS).map(([platform, config]) => {
-                      const IconComponent = config.icon;
-                      return (
-                        <div key={platform}>
-                          <label className="flex items-center gap-2 text-xs font-medium text-gray-700 mb-2">
-                            <IconComponent className="w-4 h-4" style={{ color: config.color }} />
-                            {config.label}
-                          </label>
-                          <input
-                            type="url"
-                            value={formData.socialLinks[platform] || ''}
-                            onChange={(e) => handleSocialChange(platform, e.target.value)}
-                            disabled={isLocalLoading}
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            placeholder={`https://${platform}.com/username`}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                  </Button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="actions"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="flex space-x-3"
+                >
+                  <Button
+                    variant="ghost"
+                    onClick={handleCancel}
+                    disabled={isLoading}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={handleSave}
+                    disabled={!hasChanges || isLoading}
+                    loading={isLoading}
+                    className="flex-1"
+                  >
+                    Save
+                  </Button>
+                </motion.div>
               )}
+            </AnimatePresence>
+          </div>
+
+          {/* OPTIMIZED: Social Links using component */}
+          <div className="mt-auto">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">Social Links</h3>
+            <div className="grid grid-cols-4 gap-3">
+              {Object.entries(SOCIAL_PLATFORMS).map(([platform, config]) => (
+                <SocialLinkItem
+                  key={platform}
+                  platform={platform}
+                  config={config}
+                  url={user.socialLinks?.[platform]}
+                  isEditing={false}
+                />
+              ))}
             </div>
           </div>
-        </div>
+        </motion.div>
+
+        {/* RIGHT PANEL - Content */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="flex-1 bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 p-6 flex flex-col min-h-0"
+        >
+          <AnimatePresence mode="wait">
+            {!isEditing ? (
+              /* DISPLAY MODE */
+              <motion.div
+                key="display"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-6"
+              >
+                <h3 className="text-lg font-bold text-white mb-6">Profile Information</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* OPTIMIZED: Basic Info using InfoCard component */}
+                  <div className="space-y-4">
+                    <InfoCard icon={User} label="Full Name" value={user.name} iconColor="text-blue-400" />
+                    <InfoCard icon={Phone} label="Phone" value={user.phone} iconColor="text-green-400" />
+                    <InfoCard icon={MapPin} label="Location" value={user.location} iconColor="text-purple-400" />
+                  </div>
+
+                  {/* Bio Section */}
+                  <div>
+                    <div className="bg-white/5 rounded-xl p-4 border border-white/10 h-full">
+                      <h4 className="text-sm font-medium text-gray-300 mb-3">About Me</h4>
+                      <p className="text-white leading-relaxed">
+                        {user.bio || 'No bio provided yet. Click edit to add something about yourself!'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Social Links with External Link Icons */}
+                {Object.values(user.socialLinks || {}).some(link => link) && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-300 mb-3">Social Media</h4>
+                    <div className="flex flex-wrap gap-3">
+                      {Object.entries(SOCIAL_PLATFORMS).map(([platform, config]) => {
+                        const url = user.socialLinks?.[platform];
+                        if (!url) return null;
+                        
+                        const IconComponent = config.icon;
+                        return (
+                          <a
+                            key={platform}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center space-x-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl border border-white/10 transition-all group"
+                          >
+                            <IconComponent className="w-4 h-4" style={{ color: config.color }} />
+                            <span className="text-sm text-white">{config.label}</span>
+                            <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-white transition-colors" />
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            ) : (
+              /* EDIT MODE */
+              <motion.div
+                key="edit"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex-1 flex flex-col min-h-0"
+              >
+                <h3 className="text-lg font-bold text-white mb-6">Edit Profile</h3>
+                
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 min-h-0">
+                  {/* OPTIMIZED: Left Column using Input components */}
+                  <div className="space-y-4">
+                    <Input
+                      label="Full Name"
+                      icon={<User className="w-4 h-4" />}
+                      value={formData.name}
+                      onChange={(e) => handleInputChange('name', e.target.value)}
+                      disabled={isLoading}
+                      placeholder="Enter your full name"
+                      required
+                    />
+
+                    <Input
+                      label="Phone Number"
+                      icon={<Phone className="w-4 h-4" />}
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => handleInputChange('phone', e.target.value)}
+                      disabled={isLoading}
+                      placeholder="+1 (555) 000-0000"
+                    />
+
+                    <Input
+                      label="Location"
+                      icon={<MapPin className="w-4 h-4" />}
+                      value={formData.location}
+                      onChange={(e) => handleInputChange('location', e.target.value)}
+                      disabled={isLoading}
+                      placeholder="City, Country"
+                    />
+
+                    {/* Bio Textarea */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-200 mb-2">
+                        About Me
+                      </label>
+                      <textarea
+                        value={formData.bio}
+                        onChange={(e) => handleInputChange('bio', e.target.value)}
+                        disabled={isLoading}
+                        rows={4}
+                        maxLength={200}
+                        className="w-full bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+                        placeholder="Tell us something about yourself..."
+                      />
+                      <div className="mt-1 text-xs text-gray-400 text-right">
+                        {formData.bio?.length || 0}/200
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* OPTIMIZED: Right Column - Social Links */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium text-gray-200">Social Media Links</h4>
+                    
+                    {Object.entries(SOCIAL_PLATFORMS).map(([platform, config]) => (
+                      <SocialLinkItem
+                        key={platform}
+                        platform={platform}
+                        config={config}
+                        url={formData.socialLinks[platform]}
+                        isEditing={true}
+                        onChange={handleSocialChange}
+                        disabled={isLoading}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </div>
     </div>
   );

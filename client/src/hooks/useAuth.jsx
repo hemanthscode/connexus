@@ -1,12 +1,12 @@
 /**
- * Authentication Hook
- * Handles auth state and navigation
+ * Authentication Hook - OPTIMIZED WITH UTILITIES
+ * Enhanced auth state and navigation with validation
  */
-
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import { ROUTES } from '../utils/constants';
+import { formatError } from '../utils/formatters';
 
 export const useAuth = () => {
   const navigate = useNavigate();
@@ -26,6 +26,7 @@ export const useAuth = () => {
     logout,
     changePassword,
     updateProfile,
+    clearError,
   } = authStore;
 
   // Initialize auth check
@@ -33,33 +34,46 @@ export const useAuth = () => {
     if (!isInitialized) checkAuth();
   }, [isInitialized, checkAuth]);
 
-  // Helper for auth success navigation
+  // Helper for auth success navigation - ENHANCED
   const navigateAfterAuth = () => {
     const redirectTo = location.state?.from?.pathname || ROUTES.CHAT;
     setTimeout(() => navigate(redirectTo, { replace: true }), 100);
   };
 
-  // Enhanced auth actions with navigation
+  // Enhanced auth actions with navigation and error handling
   const authActions = {
     login: async (credentials) => {
-      const result = await login(credentials);
-      if (result.success) navigateAfterAuth();
-      return result;
+      try {
+        const result = await login(credentials);
+        if (result.success) navigateAfterAuth();
+        return result;
+      } catch (error) {
+        return { success: false, error: formatError(error) };
+      }
     },
 
     register: async (userData) => {
-      const result = await register(userData);
-      if (result.success) navigateAfterAuth();
-      return result;
+      try {
+        const result = await register(userData);
+        if (result.success) navigateAfterAuth();
+        return result;
+      } catch (error) {
+        return { success: false, error: formatError(error) };
+      }
     },
 
     logout: async () => {
-      await logout();
-      navigate(ROUTES.LOGIN, { replace: true });
+      try {
+        await logout();
+        navigate(ROUTES.LOGIN, { replace: true });
+      } catch (error) {
+        console.warn('Logout navigation failed:', formatError(error));
+      }
     },
 
     changePassword,
     updateProfile,
+    clearError,
   };
 
   return {
@@ -73,6 +87,10 @@ export const useAuth = () => {
     
     // Actions
     ...authActions,
+    
+    // Utilities - ENHANCED
+    isTokenExpired: !authStore.isTokenValid(),
+    hasValidSession: isAuthenticated && authStore.isTokenValid(),
   };
 };
 

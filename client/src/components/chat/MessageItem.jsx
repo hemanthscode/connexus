@@ -1,455 +1,457 @@
-import { useState, useRef, useEffect } from 'react';
+/**
+ * Message Item - FIXED HOVER ZONE & ENHANCED EDIT MODAL
+ * Action bar only activates on message bubble, improved edit experience
+ */
+import { useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Edit, 
-  Trash2, 
-  Reply, 
-  Smile,
-  Check,
-  CheckCheck
+  Edit, Trash2, Reply, Smile, Check, CheckCheck, 
+  Info, Copy, AlertTriangle 
 } from 'lucide-react';
-import { format } from 'date-fns';
 import { useAuth } from '../../hooks/useAuth';
 import { useChat } from '../../hooks/useChat';
-import { getInitials } from '../../utils/formatters';
+import { messageHelpers, reactionHelpers, userHelpers } from '../../utils/chatHelpers';
+import { formatChatTime } from '../../utils/formatters';
+import { EMOJIS } from '../../utils/constants';
 import Button from '../ui/Button';
+import Modal, { ConfirmModal } from '../ui/Modal';
+import Avatar from '../ui/Avatar';
 import ReactionModal from './ReactionModal';
+import toast from 'react-hot-toast';
 
-const EMOJI_OPTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡', '👏', '🙏'];
-
-const MessageItem = ({ message, isGrouped, isOwn, isHighlighted, onScrollToMessage }) => {
-  const [showActions, setShowActions] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showReactionModal, setShowReactionModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(message.content);
+// ENHANCED EDIT MODAL
+const EnhancedEditModal = ({ isOpen, onClose, message, onSave }) => {
+  const [content, setContent] = useState(message?.content || '');
+  const [isSaving, setIsSaving] = useState(false);
   
-  const { user } = useAuth();
-  const { 
-    editMessage, 
-    deleteMessage, 
-    toggleReaction, 
-    setReplyToMessage,
-    messageEditingId,
-    setMessageEditing
-  } = useChat();
-  
-  const editInputRef = useRef(null);
-
-  // Update edit content when message changes (for real-time updates)
-  useEffect(() => {
-    setEditContent(message.content);
-  }, [message.content]);
-
-  useEffect(() => {
-    if (messageEditingId === message._id) {
-      setIsEditing(true);
-    } else {
-      setIsEditing(false);
-    }
-  }, [messageEditingId, message._id]);
-
-  useEffect(() => {
-    if (isEditing && editInputRef.current) {
-      editInputRef.current.focus();
-    }
-  }, [isEditing]);
-
-  const handleEdit = () => {
-    setMessageEditing(message._id);
-    setEditContent(message.content);
-    setShowActions(false);
-  };
-
-  const handleSaveEdit = async () => {
-    if (editContent.trim() && editContent !== message.content) {
-      await editMessage(message._id, editContent.trim());
-    }
-    setMessageEditing(null);
-    setIsEditing(false);
-  };
-
-  const handleCancelEdit = () => {
-    setEditContent(message.content);
-    setMessageEditing(null);
-    setIsEditing(false);
-  };
-
-  const handleDelete = async () => {
-    if (window.confirm('Are you sure you want to delete this message?')) {
-      await deleteMessage(message._id);
-    }
-    setShowActions(false);
-  };
-
-  const handleReply = () => {
-    setReplyToMessage(message);
-    setShowActions(false);
-  };
-
-  // FIXED: Handle click on reply indicator to scroll to original message
-  const handleReplyClick = () => {
-    if (message.replyTo?._id && onScrollToMessage) {
-      onScrollToMessage(message.replyTo._id);
-    }
-  };
-
-  // Enhanced reaction handling with optimistic updates
-  const handleReaction = async (emoji) => {
+  const handleSave = async () => {
+    const trimmedContent = content.trim();
+    if (!trimmedContent || trimmedContent === message?.content) return;
+    
+    setIsSaving(true);
     try {
-      await toggleReaction(message._id, emoji);
-      setShowEmojiPicker(false);
+      await onSave(trimmedContent);
+      onClose();
+      toast.success('Message updated');
     } catch (error) {
-      console.error('Failed to toggle reaction:', error);
+      toast.error('Failed to update message');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // Handle reaction bubble click to show modal
-  const handleReactionClick = () => {
-    if (message.reactions && message.reactions.length > 0) {
-      setShowReactionModal(true);
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSave();
+    }
+    if (e.key === 'Escape') {
+      onClose();
     }
   };
 
-  const getMessageStatus = () => {
-    if (message.isOptimistic) return 'sending';
-    if (message.status === 'failed') return 'failed';
-    if (message.readBy?.length > 0) return 'read';
-    return message.status || 'sent';
-  };
-
-  // ENHANCED: Better reaction rendering with proper user details
-  const renderReactions = () => {
-    if (!message.reactions || message.reactions.length === 0) return null;
-
-    const reactionGroups = message.reactions.reduce((groups, reaction) => {
-      if (!groups[reaction.emoji]) {
-        groups[reaction.emoji] = [];
-      }
-      groups[reaction.emoji].push(reaction);
-      return groups;
-    }, {});
-
-    return (
-      <div className="flex flex-wrap gap-1 mt-2">
-        <AnimatePresence>
-          {Object.entries(reactionGroups).map(([emoji, reactions]) => {
-            const hasUserReacted = reactions.some(r => {
-              // Handle both populated and non-populated user data
-              const userId = r.user?._id || r.user;
-              return userId === user?._id;
-            });
-            
-            return (
-              <motion.button
-                key={emoji}
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleReactionClick}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  handleReaction(emoji);
-                }}
-                className={`inline-flex items-center space-x-1 px-2 py-1 rounded-full text-xs transition-all duration-200 cursor-pointer ${
-                  hasUserReacted 
-                    ? 'bg-blue-500/30 text-blue-300 border border-blue-400/30 shadow-lg' 
-                    : 'bg-white/10 text-gray-300 hover:bg-white/20 border border-transparent'
-                }`}
-                title={`Click to see who reacted • Right-click to ${hasUserReacted ? 'remove' : 'add'} your reaction`}
-              >
-                <span>{emoji}</span>
-                <motion.span
-                  key={reactions.length}
-                  initial={{ scale: 1.2 }}
-                  animate={{ scale: 1 }}
-                  className="font-medium"
-                >
-                  {reactions.length}
-                </motion.span>
-              </motion.button>
-            );
-          })}
-        </AnimatePresence>
-      </div>
-    );
-  };
-
-  const renderMessageStatus = () => {
-    if (!isOwn) return null;
-    
-    const status = getMessageStatus();
-    
-    switch (status) {
-      case 'sending':
-        return <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />;
-      case 'sent':
-        return <Check className="w-3 h-3 text-gray-400" />;
-      case 'delivered':
-        return <CheckCheck className="w-3 h-3 text-gray-400" />;
-      case 'read':
-        return <CheckCheck className="w-3 h-3 text-blue-400" />;
-      case 'failed':
-        return <div className="w-3 h-3 bg-red-500 rounded-full" />;
-      default:
-        return null;
-    }
-  };
-
-  if (message.isDeleted) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -20 }}
-        className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
-      >
-        <div className="max-w-xs lg:max-w-md px-4 py-2 bg-white/5 border border-white/10 rounded-2xl">
-          <p className="text-gray-500 italic text-sm">This message was deleted</p>
-        </div>
-      </motion.div>
-    );
-  }
+  const isChanged = content.trim() !== message?.content;
+  const isValid = content.trim().length > 0;
+  const charCount = content.length;
+  const maxChars = 2000;
 
   return (
-    <>
-      <motion.div
-        key={message._id}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ 
-          opacity: 1, 
-          y: 0,
-          backgroundColor: isHighlighted ? 'rgba(59, 130, 246, 0.1)' : 'transparent'
-        }}
-        exit={{ opacity: 0, y: -20 }}
-        layout
-        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isGrouped ? 'mt-1' : 'mt-4'} transition-all duration-500 rounded-lg ${
-          isHighlighted ? 'ring-2 ring-blue-400/50' : ''
-        }`}
-        onMouseEnter={() => setShowActions(true)}
-        onMouseLeave={() => setShowActions(false)}
-        data-message-id={message._id} // For scrolling reference
-      >
-        <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} items-end space-x-2 ${isOwn ? 'space-x-reverse' : ''} max-w-xs lg:max-w-md`}>
-          {/* Avatar */}
-          {!isOwn && !isGrouped && (
-            <div className="flex-shrink-0">
-              {message.sender?.avatar ? (
-                <img 
-                  src={message.sender.avatar} 
-                  alt={message.sender.name} 
-                  className="w-6 h-6 rounded-full"
-                />
-              ) : (
-                <div className="w-6 h-6 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs">
-                    {getInitials(message.sender?.name || 'U')}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+    <Modal isOpen={isOpen} onClose={onClose} title="Edit Message" size="md">
+      <div className="p-6">
+        {/* Original Message Preview */}
+        <div className="bg-white/5 rounded-lg p-3 mb-4 border-l-4 border-blue-500">
+          <p className="text-xs text-blue-300 mb-1">Original message</p>
+          <p className="text-sm text-gray-300">{message?.content}</p>
+        </div>
 
-          {/* Message Bubble */}
-          <div className="relative group">
-            {/* Actions */}
-            <AnimatePresence>
-              {showActions && !isEditing && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  className={`absolute top-0 z-10 flex items-center space-x-1 ${
-                    isOwn ? '-left-20' : '-right-20'
-                  }`}
-                >
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="p-1 bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20"
-                  >
-                    <Smile className="w-3 h-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleReply}
-                    className="p-1 bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20"
-                  >
-                    <Reply className="w-3 h-3" />
-                  </Button>
-                  {isOwn && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleEdit}
-                      className="p-1 bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20"
-                    >
-                      <Edit className="w-3 h-3" />
-                    </Button>
-                  )}
-                  {isOwn && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleDelete}
-                      className="p-1 bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-red-500/20"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Emoji Picker */}
-            <AnimatePresence>
-              {showEmojiPicker && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8, y: 10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.8, y: 10 }}
-                  className={`absolute z-20 bg-white/10 backdrop-blur-lg border border-white/20 rounded-xl p-2 flex space-x-1 shadow-xl ${
-                    isOwn ? '-left-4 top-8' : '-right-4 top-8'
-                  }`}
-                >
-                  {EMOJI_OPTIONS.map((emoji) => (
-                    <motion.button
-                      key={emoji}
-                      whileHover={{ scale: 1.2 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => handleReaction(emoji)}
-                      className="w-8 h-8 flex items-center justify-center hover:bg-white/20 rounded-lg transition-colors"
-                    >
-                      <span className="text-lg">{emoji}</span>
-                    </motion.button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Message Content */}
-            <div className={`relative px-4 py-2 rounded-2xl transition-all duration-200 ${
-              isOwn 
-                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white' 
-                : 'bg-white/10 text-white'
-            } ${isGrouped ? 'rounded-tl-md' : ''}`}>
-              
-              {/* FIXED: Clickable Reply indicator */}
-              {message.replyTo && (
-                <motion.div 
-                  className="mb-2 p-2 bg-black/20 rounded-lg border-l-2 border-blue-400 cursor-pointer hover:bg-black/30 transition-colors"
-                  onClick={handleReplyClick}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  title="Click to jump to replied message"
-                >
-                  <p className="text-xs text-gray-300 mb-1">
-                    Replying to {message.replyTo.sender?.name || 'Unknown'}
-                  </p>
-                  <p className="text-sm text-gray-200 truncate">
-                    {message.replyTo.content}
-                  </p>
-                </motion.div>
-              )}
-
-              {/* Sender name for group chats */}
-              {!isOwn && !isGrouped && (
-                <p className="text-xs text-blue-300 mb-1 font-medium">
-                  {message.sender?.name || 'Unknown'}
-                </p>
-              )}
-
-              {/* Message content or edit input */}
-              {isEditing ? (
-                <div className="space-y-2">
-                  <input
-                    ref={editInputRef}
-                    type="text"
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') handleSaveEdit();
-                      if (e.key === 'Escape') handleCancelEdit();
-                    }}
-                    className="w-full bg-transparent border-none outline-none text-white placeholder-gray-300"
-                  />
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={handleSaveEdit}
-                      className="text-xs text-green-400 hover:text-green-300 transition-colors"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={handleCancelEdit}
-                      className="text-xs text-gray-400 hover:text-gray-300 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <motion.p 
-                    key={message.content}
-                    initial={{ opacity: 0.7 }}
-                    animate={{ opacity: message.isOptimistic ? 0.7 : 1 }}
-                    className="transition-opacity duration-200"
-                  >
-                    {message.content}
-                  </motion.p>
-                  
-                  {/* Edit indicator */}
-                  <AnimatePresence>
-                    {message.editedAt && (
-                      <motion.p 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="text-xs text-gray-400 mt-1 italic"
-                      >
-                        edited
-                      </motion.p>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Timestamp and status */}
-                  <div className={`flex items-center justify-between mt-1 space-x-2 ${
-                    isOwn ? 'flex-row-reverse space-x-reverse' : ''
-                  }`}>
-                    <span className="text-xs text-gray-400">
-                      {format(new Date(message.createdAt), 'HH:mm')}
-                    </span>
-                    <motion.div
-                      key={getMessageStatus()}
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                    >
-                      {renderMessageStatus()}
-                    </motion.div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Reactions */}
-            {renderReactions()}
+        {/* Edit Textarea */}
+        <div className="relative">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Edit your message..."
+            rows={4}
+            maxLength={maxChars}
+            className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all"
+            autoFocus
+          />
+          
+          {/* Character Count */}
+          <div className="absolute bottom-3 right-3 text-xs text-gray-400">
+            <span className={charCount > maxChars * 0.9 ? 'text-yellow-400' : charCount > maxChars * 0.95 ? 'text-red-400' : ''}>
+              {charCount}/{maxChars}
+            </span>
           </div>
         </div>
-      </motion.div>
 
-      {/* Reaction Modal */}
-      <ReactionModal
-        isOpen={showReactionModal}
-        onClose={() => setShowReactionModal(false)}
+        {/* Helper Text */}
+        <p className="text-xs text-gray-400 mt-2 flex items-center space-x-4">
+          <span>Press Ctrl+Enter to save</span>
+          <span>•</span>
+          <span>Esc to cancel</span>
+        </p>
+
+        {/* Actions */}
+        <div className="flex justify-between items-center mt-6">
+          <div className="flex items-center space-x-2">
+            {isChanged && (
+              <div className="flex items-center space-x-1 text-xs text-blue-400">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                <span>Unsaved changes</span>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex space-x-3">
+            <Button 
+              variant="ghost" 
+              onClick={onClose}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="primary" 
+              onClick={handleSave}
+              disabled={!isValid || !isChanged || isSaving}
+              loading={isSaving}
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+// OPTIMIZED: Consolidated modals using existing Modal variants
+const MessageModals = ({ 
+  showDelete, showInfo, showEdit, showReactions,
+  onCloseDelete, onCloseInfo, onCloseEdit, onCloseReactions,
+  onConfirmDelete, onSaveEdit, message, isOwn 
+}) => {
+  return (
+    <>
+      <ConfirmModal
+        isOpen={showDelete}
+        onClose={onCloseDelete}
+        onConfirm={onConfirmDelete}
+        onCancel={onCloseDelete}
+        title="Delete Message"
+        type="error"
+        confirmText="Delete"
+        cancelText="Cancel"
+      >
+        <div className="p-6">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-white">Delete this message?</h3>
+              <p className="text-gray-400 text-sm">This action cannot be undone.</p>
+            </div>
+          </div>
+          <div className="bg-white/5 rounded-lg p-3">
+            <p className="text-sm text-gray-300 truncate">{message?.content}</p>
+          </div>
+        </div>
+      </ConfirmModal>
+
+      <Modal isOpen={showInfo} onClose={onCloseInfo} title="Message Info" size="md">
+        <div className="p-6 space-y-4">
+          <div className="bg-white/5 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-gray-300 mb-2">Content</h4>
+            <p className="text-white">{message?.content}</p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white/5 rounded-lg p-3">
+              <h4 className="text-xs font-medium text-gray-400 mb-1">Sent</h4>
+              <p className="text-sm text-white">{formatChatTime(message?.createdAt, { full: true })}</p>
+            </div>
+            
+            {message?.editedAt && (
+              <div className="bg-white/5 rounded-lg p-3">
+                <h4 className="text-xs font-medium text-gray-400 mb-1">Edited</h4>
+                <p className="text-sm text-white">{formatChatTime(message.editedAt, { full: true })}</p>
+              </div>
+            )}
+            
+            {isOwn && (
+              <div className="bg-white/5 rounded-lg p-3">
+                <h4 className="text-xs font-medium text-gray-400 mb-1">Status</h4>
+                <p className="text-sm text-white capitalize">{messageHelpers.getMessageStatus(message)}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <EnhancedEditModal
+        isOpen={showEdit}
+        onClose={onCloseEdit}
         message={message}
-        reactions={message.reactions || []}
+        onSave={onSaveEdit}
+      />
+
+      <ReactionModal
+        isOpen={showReactions}
+        onClose={onCloseReactions}
+        message={message}
+        reactions={message?.reactions || []}
       />
     </>
   );
 };
 
-export default MessageItem;
+// OPTIMIZED: Consolidated quick reactions using Button component
+const QuickReactions = ({ onReact, isOwn }) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.8 }}
+    animate={{ opacity: 1, scale: 1 }}
+    exit={{ opacity: 0, scale: 0.8 }}
+    className={`absolute top-0 ${isOwn ? 'right-full mr-2' : 'left-full ml-2'} bg-gray-900/95 backdrop-blur border border-white/20 rounded-full px-2 py-1 flex space-x-1 shadow-lg z-30`}
+  >
+    {EMOJIS.REACTIONS.slice(0, 5).map((emoji) => (
+      <Button
+        key={emoji}
+        variant="ghost"
+        size="xs"
+        onClick={() => onReact(emoji)}
+        className="w-8 h-8 text-sm hover:scale-110"
+      >
+        {emoji}
+      </Button>
+    ))}
+  </motion.div>
+);
+
+const MessageItem = ({ message, isGrouped, isOwn, showSenderName, onScrollToMessage }) => {
+  const [showActions, setShowActions] = useState(false);
+  const [showQuickReactions, setShowQuickReactions] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showReactionModal, setShowReactionModal] = useState(false);
+  
+  const { user } = useAuth();
+  const { editMessage, deleteMessage, toggleReaction, setReplyToMessage } = useChat();
+
+  const handleReaction = (emoji) => {
+    toggleReaction(message._id, emoji);
+    setShowQuickReactions(false);
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message.content);
+    toast.success('Message copied');
+  };
+
+  const canEdit = isOwn && !message.isDeleted;
+  const canDelete = isOwn && !message.isDeleted;
+
+  // OPTIMIZED: Consolidated status icon logic
+  const getStatusIcon = () => {
+    if (!isOwn) return null;
+    const status = messageHelpers.getMessageStatus(message);
+    const statusIcons = {
+      sending: <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />,
+      sent: <Check className="w-3 h-3 text-gray-400" />,
+      delivered: <CheckCheck className="w-3 h-3 text-gray-400" />,
+      read: <CheckCheck className="w-3 h-3 text-blue-400" />,
+      failed: <div className="w-3 h-3 bg-red-500 rounded-full" />
+    };
+    return statusIcons[status];
+  };
+
+  // OPTIMIZED: Consolidated reactions using Button components
+  const ReactionsBar = () => {
+    if (!message.reactions?.length) return null;
+    const grouped = reactionHelpers.groupReactionsByEmoji(message.reactions);
+    
+    return (
+      <div className="flex flex-wrap gap-1 mt-1">
+        {Object.entries(grouped).map(([emoji, reactions]) => {
+          const hasReacted = reactionHelpers.hasUserReacted(reactions, user?._id);
+          const count = reactions.length;
+          
+          return (
+            <Button
+              key={emoji}
+              variant={hasReacted ? "primary" : "ghost"}
+              size="xs"
+              onClick={() => setShowReactionModal(true)}
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 text-xs ${
+                hasReacted ? 'bg-blue-500/20 text-blue-300' : 'bg-white/10 text-gray-300'
+              }`}
+            >
+              <span>{emoji}</span>
+              <span>{count}</span>
+            </Button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // OPTIMIZED: Consolidated action buttons
+  const actionButtons = [
+    { icon: Smile, action: () => setShowQuickReactions(!showQuickReactions), title: "React" },
+    { icon: Reply, action: () => setReplyToMessage(message), title: "Reply" },
+    { icon: Copy, action: handleCopy, title: "Copy" },
+    { icon: Info, action: () => setShowInfoModal(true), title: "Message info" },
+    ...(canEdit ? [{ icon: Edit, action: () => setShowEditModal(true), title: "Edit", variant: "warning" }] : []),
+    ...(canDelete ? [{ icon: Trash2, action: () => setShowDeleteModal(true), title: "Delete", variant: "danger" }] : [])
+  ];
+
+  if (message.isDeleted) {
+    return (
+      <div className={`flex mb-3 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+        <div className="flex items-center space-x-2 px-3 py-2 bg-white/5 rounded-lg max-w-sm">
+          <Trash2 className="w-3 h-3 text-gray-500" />
+          <span className="text-gray-500 italic text-sm">This message was deleted</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* FIXED: Removed hover events from outer container */}
+      <div className={`flex mb-3 ${isOwn ? 'justify-end' : 'justify-start'} ${isGrouped ? 'mt-1' : 'mt-4'}`}>
+        <div className={`flex items-end space-x-2 max-w-md relative ${isOwn ? 'flex-row-reverse space-x-reverse' : ''}`}>
+          
+          {/* FIXED: Consistent Avatar usage */}
+          {!isOwn && !isGrouped && showSenderName && (
+            <Avatar
+              src={message.sender?.avatar}
+              name={message.sender?.name}
+              size="sm"
+              className="mb-1"
+            />
+          )}
+
+          {/* FIXED: Hover events moved to message bubble only */}
+          <div 
+            className="relative group"
+            onMouseEnter={() => setShowActions(true)}
+            onMouseLeave={() => {
+              setShowActions(false);
+              setShowQuickReactions(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`relative px-3 py-2 rounded-2xl break-words ${
+                isOwn 
+                  ? 'bg-blue-600 text-white rounded-br-md' 
+                  : 'bg-white/10 text-white rounded-bl-md'
+              } ${isGrouped && isOwn ? 'rounded-tr-2xl' : ''} ${isGrouped && !isOwn ? 'rounded-tl-2xl' : ''}`}
+            >
+              {/* Reply indicator */}
+              {message.replyTo && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onScrollToMessage?.(message.replyTo._id)}
+                  className="w-full mb-2 p-2 bg-black/20 rounded-lg border-l-2 border-blue-400 hover:bg-black/30 justify-start"
+                >
+                  <div className="text-left">
+                    <p className="text-xs text-blue-300 font-medium">
+                      {userHelpers.getUserDetails(message.replyTo.sender).name}
+                    </p>
+                    <p className="text-xs text-gray-200 truncate">
+                      {messageHelpers.getMessagePreview(message.replyTo)}
+                    </p>
+                  </div>
+                </Button>
+              )}
+
+              {showSenderName && !isOwn && (
+                <p className="text-xs text-blue-200 mb-1 font-medium">
+                  {userHelpers.getUserDetails(message.sender).name}
+                </p>
+              )}
+
+              <p className={`text-sm leading-relaxed ${message.isOptimistic ? 'opacity-70' : ''}`}>
+                {message.content}
+              </p>
+
+              <div className={`flex items-center justify-between mt-1 space-x-2 ${isOwn ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                <div className="flex items-center space-x-1">
+                  <span className="text-xs text-gray-300/80">
+                    {formatChatTime(message.createdAt)}
+                  </span>
+                  {message.editedAt && (
+                    <span className="text-xs text-gray-300/60">• edited</span>
+                  )}
+                </div>
+                {getStatusIcon()}
+              </div>
+            </motion.div>
+
+            <ReactionsBar />
+
+            {/* FIXED: Action Bar positioned relative to message bubble */}
+            <AnimatePresence>
+              {showActions && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className={`absolute top-0 ${isOwn ? 'right-full mr-2' : 'left-full ml-2'} bg-gray-900/95 backdrop-blur border border-white/20 rounded-lg px-1 py-1 flex items-center space-x-1 shadow-lg z-20`}
+                >
+                  {actionButtons.map(({ icon: Icon, action, title, variant }) => (
+                    <Button
+                      key={title}
+                      variant="ghost"
+                      size="xs"
+                      onClick={action}
+                      className={`p-1.5 ${
+                        variant === 'warning' ? 'hover:bg-yellow-500/20' :
+                        variant === 'danger' ? 'hover:bg-red-500/20' : 'hover:bg-white/20'
+                      }`}
+                      title={title}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </Button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {showQuickReactions && (
+                <QuickReactions onReact={handleReaction} isOwn={isOwn} />
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+
+      <MessageModals
+        showDelete={showDeleteModal}
+        showInfo={showInfoModal}
+        showEdit={showEditModal}
+        showReactions={showReactionModal}
+        onCloseDelete={() => setShowDeleteModal(false)}
+        onCloseInfo={() => setShowInfoModal(false)}
+        onCloseEdit={() => setShowEditModal(false)}
+        onCloseReactions={() => setShowReactionModal(false)}
+        onConfirmDelete={() => {
+          deleteMessage(message._id);
+          setShowDeleteModal(false);
+        }}
+        onSaveEdit={(content) => editMessage(message._id, content)}
+        message={message}
+        isOwn={isOwn}
+      />
+    </>
+  );
+};
+
+export default memo(MessageItem);

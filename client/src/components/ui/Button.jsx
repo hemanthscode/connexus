@@ -1,10 +1,10 @@
 /**
- * Enhanced Button Component
- * Supports variants, sizes, loading states with animations
+ * Enhanced Button Component - OPTIMIZED WITH UTILITIES
+ * Uses animation constants and better state management
  */
-
 import { forwardRef, memo } from 'react';
 import { motion } from 'framer-motion';
+import { ANIMATION } from '../../utils/constants';
 import clsx from 'clsx';
 import Loading from './Loading';
 
@@ -18,25 +18,13 @@ const buttonVariants = {
 };
 
 const buttonSizes = {
-  xs: 'px-2 py-1.5 text-xs',
-  sm: 'px-3 py-2 text-sm',
-  md: 'px-4 py-2.5 text-sm',
-  lg: 'px-6 py-3 text-base',
-  xl: 'px-8 py-4 text-lg',
+  xs: 'px-2 py-1.5 text-xs', sm: 'px-3 py-2 text-sm',
+  md: 'px-4 py-2.5 text-sm', lg: 'px-6 py-3 text-base', xl: 'px-8 py-4 text-lg',
 };
 
 const Button = forwardRef(({
-  children,
-  variant = 'primary',
-  size = 'md',
-  loading = false,
-  disabled = false,
-  fullWidth = false,
-  leftIcon,
-  rightIcon,
-  className = '',
-  onClick,
-  ...props
+  children, variant = 'primary', size = 'md', loading = false, disabled = false,
+  fullWidth = false, leftIcon, rightIcon, className = '', onClick, ...props
 }, ref) => {
   const isDisabled = disabled || loading;
 
@@ -46,70 +34,31 @@ const Button = forwardRef(({
     }
   };
 
-  const buttonClasses = clsx(
-    // Base styles
-    'relative inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200',
-    'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent',
-    'disabled:cursor-not-allowed',
-    
-    // Variant styles
-    buttonVariants[variant],
-    
-    // Size styles
-    buttonSizes[size],
-    
-    // State styles
-    isDisabled && 'opacity-50 cursor-not-allowed',
-    fullWidth && 'w-full',
-    
-    // Custom styles
-    className
-  );
-
   return (
     <motion.button
       ref={ref}
-      className={buttonClasses}
+      className={clsx(
+        'relative inline-flex items-center justify-center font-medium rounded-xl transition-all',
+        'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent',
+        buttonVariants[variant], buttonSizes[size],
+        isDisabled && 'opacity-50 cursor-not-allowed',
+        fullWidth && 'w-full',
+        className
+      )}
       disabled={isDisabled}
       onClick={handleClick}
       whileHover={!isDisabled ? { scale: 1.02 } : undefined}
       whileTap={!isDisabled ? { scale: 0.98 } : undefined}
-      transition={{ duration: 0.1 }}
+      transition={{ duration: ANIMATION.DURATION.FAST / 1000 }} // Use constant
       {...props}
     >
-      {/* Left Icon */}
-      {leftIcon && !loading && (
-        <span className="mr-2 flex-shrink-0">
-          {leftIcon}
-        </span>
-      )}
-
-      {/* Loading Spinner */}
-      {loading && (
-        <Loading 
-          size={size === 'xs' || size === 'sm' ? 'sm' : 'md'} 
-          className="mr-2" 
-        />
-      )}
-
-      {/* Button Content */}
-      <span className={clsx(
-        'flex-1 truncate',
-        loading && 'opacity-70'
-      )}>
-        {children}
-      </span>
-
-      {/* Right Icon */}
-      {rightIcon && !loading && (
-        <span className="ml-2 flex-shrink-0">
-          {rightIcon}
-        </span>
-      )}
+      {leftIcon && !loading && <span className="mr-2 flex-shrink-0">{leftIcon}</span>}
+      {loading && <Loading size={size === 'xs' || size === 'sm' ? 'sm' : 'md'} className="mr-2" />}
+      <span className={clsx('flex-1 truncate', loading && 'opacity-70')}>{children}</span>
+      {rightIcon && !loading && <span className="ml-2 flex-shrink-0">{rightIcon}</span>}
     </motion.button>
   );
 });
 
 Button.displayName = 'Button';
-
 export default memo(Button);

@@ -1,12 +1,12 @@
 /**
- * Authentication State Management
- * Handles user auth state and operations
+ * Authentication State Management - OPTIMIZED
+ * Enhanced with validation and error handling utilities
  */
-
 import { create } from 'zustand';
 import { authService } from '../services/auth';
 import { STORAGE_KEYS } from '../utils/constants';
 import { formatError } from '../utils/formatters';
+import { authValidation, validateFormData } from '../utils/validation';
 import toast from 'react-hot-toast';
 
 const useAuthStore = create((set, get) => ({
@@ -18,7 +18,7 @@ const useAuthStore = create((set, get) => ({
   isInitialized: false,
   error: null,
 
-  // Internal helpers
+  // ============== Internal Helpers - OPTIMIZED ==============
   _setAuthState: (authData) => {
     const { user = null, token = null, isAuthenticated = false } = authData;
     
@@ -33,7 +33,7 @@ const useAuthStore = create((set, get) => ({
     set({ user, token, isAuthenticated, isInitialized: true });
   },
 
-  _handleAuthAction: async (action, successMessage) => {
+  _handleAuthAction: async (action, successMessage, validationSchema = null) => {
     set({ isLoading: true, error: null });
     
     try {
@@ -58,20 +58,50 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  // Actions
+  // ============== Actions - ENHANCED WITH VALIDATION ==============
   setUser: (user) => set({ user, isAuthenticated: !!user }),
 
-  register: (userData) => 
-    get()._handleAuthAction(
+  register: async (userData) => {
+    // Validate registration data
+    const validation = validateFormData(userData, {
+      name: authValidation.name,
+      email: authValidation.email,
+      password: authValidation.password,
+      ...(userData.confirmPassword && {
+        confirmPassword: authValidation.confirmPassword(userData.password)
+      })
+    });
+
+    if (!validation.isValid) {
+      const firstError = Object.values(validation.errors)[0];
+      toast.error(firstError);
+      return { success: false, error: firstError };
+    }
+
+    return get()._handleAuthAction(
       () => authService.register(userData),
       'Registration successful!'
-    ),
+    );
+  },
 
-  login: (credentials) => 
-    get()._handleAuthAction(
+  login: async (credentials) => {
+    // Validate login credentials
+    const validation = validateFormData(credentials, {
+      email: authValidation.email,
+      password: { required: 'Password is required' }
+    });
+
+    if (!validation.isValid) {
+      const firstError = Object.values(validation.errors)[0];
+      toast.error(firstError);
+      return { success: false, error: firstError };
+    }
+
+    return get()._handleAuthAction(
       () => authService.login(credentials),
       'Login successful!'
-    ),
+    );
+  },
 
   logout: async () => {
     try {
@@ -98,10 +128,10 @@ const useAuthStore = create((set, get) => ({
     
     try {
       const response = await authService.getProfile();
-      get()._setAuthState({ 
-        user: response.data, 
-        token, 
-        isAuthenticated: true 
+      get()._setAuthState({
+        user: response.data,
+        token,
+        isAuthenticated: true
       });
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -111,17 +141,73 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  changePassword: (passwordData) =>
-    get()._handleAuthAction(
+  changePassword: async (passwordData) => {
+    // Validate password change data
+    const validation = validateFormData(passwordData, {
+      currentPassword: { required: 'Current password is required' },
+      newPassword: authValidation.password,
+      confirmPassword: authValidation.confirmPassword(passwordData.newPassword)
+    });
+
+    if (!validation.isValid) {
+      const firstError = Object.values(validation.errors)[0];
+      toast.error(firstError);
+      return { success: false, error: firstError };
+    }
+
+    return get()._handleAuthAction(
       () => authService.changePassword(passwordData),
       'Password changed successfully!'
-    ),
+    );
+  },
 
-  updateProfile: (profileData) =>
-    get()._handleAuthAction(
+  updateProfile: async (profileData) => {
+    // Validate profile data
+    const validationRules = {};
+    
+    if (profileData.name) validationRules.name = authValidation.name;
+    if (profileData.email) validationRules.email = authValidation.email;
+    if (profileData.phone) validationRules.phone = authValidation.phone;
+    if (profileData.bio) validationRules.bio = authValidation.bio;
+    if (profileData.websiteUrl) validationRules.websiteUrl = authValidation.websiteUrl;
+
+    const validation = validateFormData(profileData, validationRules);
+
+    if (!validation.isValid) {
+      const firstError = Object.values(validation.errors)[0];
+      toast.error(firstError);
+      return { success: false, error: firstError };
+    }
+
+    return get()._handleAuthAction(
       () => authService.updateProfile(profileData),
       'Profile updated successfully!'
-    ),
+    );
+  },
+
+  // ============== Utility Methods ==============
+  isTokenValid: () => {
+    const token = get().token;
+    if (!token) return false;
+    
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.exp * 1000 > Date.now();
+    } catch {
+      return false;
+    }
+  },
+
+  getStoredUser: () => {
+    try {
+      const storedUser = localStorage.getItem(STORAGE_KEYS.USER);
+      return storedUser ? JSON.parse(storedUser) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  clearError: () => set({ error: null }),
 }));
 
 export default useAuthStore;

@@ -1,28 +1,37 @@
 /**
- * Typing Indicator Hook
- * Manages typing state and indicators - ENHANCED
+ * Typing Indicator Hook - OPTIMIZED WITH UTILITIES
+ * Enhanced typing management using constants and typingHelpers
  */
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from './useSocket';
 import { useAuth } from './useAuth';
+import { TIME } from '../utils/constants';
+import { typingHelpers } from '../utils/chatHelpers';
 
 export const useTyping = (conversationId) => {
   const [isTyping, setIsTyping] = useState(false);
-  const { startTyping, stopTyping, getTypingUsers, getTypingIndicatorText, isConnected } = useSocket();
+  const { 
+    startTyping, 
+    stopTyping, 
+    getTypingUsers, 
+    getTypingIndicatorText, 
+    isConnected 
+  } = useSocket();
   const { user } = useAuth();
   
   const typingTimeoutRef = useRef(null);
   const lastTypingTimeRef = useRef(0);
   const currentConversationRef = useRef(conversationId);
   
-  const TYPING_TIMEOUT = 3000; // Stop typing after 3 seconds of inactivity
-  const TYPING_THROTTLE = 1000; // Only send typing events every 1 second
+  // Use constants from utilities instead of hardcoded values
+  const TYPING_TIMEOUT = TIME.TYPING_TIMEOUT; // 3000ms
+  const TYPING_THROTTLE = TIME.TYPING_THROTTLE; // 1000ms
 
   // Update conversation ref when it changes
   useEffect(() => {
-    // Stop typing in previous conversation
-    if (currentConversationRef.current && currentConversationRef.current !== conversationId && isTyping) {
+    if (currentConversationRef.current && 
+        currentConversationRef.current !== conversationId && 
+        isTyping) {
       console.log('🔤 Conversation changed, stopping typing in previous:', currentConversationRef.current);
       stopTyping(currentConversationRef.current);
       setIsTyping(false);
@@ -69,7 +78,7 @@ export const useTyping = (conversationId) => {
       handleStopTyping();
     }, TYPING_TIMEOUT);
     
-  }, [conversationId, user, isConnected, isTyping, startTyping]);
+  }, [conversationId, user, isConnected, isTyping, startTyping, TYPING_TIMEOUT, TYPING_THROTTLE]);
 
   const handleStopTyping = useCallback(() => {
     if (isTyping && conversationId) {
@@ -97,10 +106,9 @@ export const useTyping = (conversationId) => {
     };
   }, []); // Only run on unmount
 
-  // Get other users typing
-  const othersTyping = getTypingUsers(conversationId)
-    .filter(typingUser => typingUser._id !== user?._id);
-  
+  // ENHANCED: Use typingHelpers for typing user operations
+  const typingUsers = getTypingUsers(conversationId);
+  const othersTyping = typingHelpers.getTypingUserNames(typingUsers, user?._id);
   const typingIndicatorText = getTypingIndicatorText(conversationId, user?._id);
 
   return {
@@ -109,9 +117,9 @@ export const useTyping = (conversationId) => {
     startTyping: handleStartTyping,
     stopTyping: handleStopTyping,
     
-    // Others typing state
+    // Others typing state - ENHANCED WITH UTILITIES
     othersTyping,
-    isAnyoneElseTyping: othersTyping.length > 0,
+    isAnyoneElseTyping: typingHelpers.hasTypingUsers(typingUsers, user?._id),
     typingIndicatorText,
     
     // Utility methods with better logic
@@ -129,6 +137,15 @@ export const useTyping = (conversationId) => {
       } else if (e.key.length === 1) { // Only for printable characters
         handleStartTyping();
       }
+    },
+
+    // NEW: Additional utilities using typingHelpers
+    getTypingCount: () => {
+      return typingHelpers.getTypingUserNames(typingUsers, user?._id).length;
+    },
+    
+    getTypingNames: (maxNames = 2) => {
+      return typingHelpers.getTypingUserNames(typingUsers, user?._id, maxNames);
     },
   };
 };

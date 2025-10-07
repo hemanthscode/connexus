@@ -1,13 +1,20 @@
 /**
- * Chat State Management - OPTIMIZED GROUP FUNCTIONALITY
- * Fixed all group operations with proper state coordination
+ * Chat State Management - OPTIMIZED WITH UTILITIES
+ * Enhanced group functionality with reduced redundancy
  */
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import socketService from '../services/socket';
 import { chatService } from '../services/chat';
-import { SOCKET_EVENTS } from '../utils/constants';
+import { SOCKET_EVENTS, MESSAGE_TYPES } from '../utils/constants';
 import { formatError } from '../utils/formatters';
+import { 
+  messageHelpers, 
+  conversationHelpers, 
+  userHelpers,
+  permissionHelpers 
+} from '../utils/chatHelpers';
+import { sanitizers } from '../utils/validation';
 import toast from 'react-hot-toast';
 
 const useChatStore = create(
@@ -32,7 +39,7 @@ const useChatStore = create(
     _eventsSetup: false,
     _messageLoadingErrors: new Set(),
 
-    // ============== Helpers ==============
+    // ============== Helpers - OPTIMIZED ==============
     _createNewMap: (originalMap, key, value) => {
       const newMap = new Map(originalMap);
       newMap.set(key, value);
@@ -44,32 +51,28 @@ const useChatStore = create(
       const currentMessages = messages.get(conversationId) || [];
       const updatedMessages = updater(currentMessages);
       
-      set({ 
+      set({
         messages: get()._createNewMap(messages, conversationId, updatedMessages)
       });
     },
 
     _updateUnreadCount: (conversationId, count) => {
       const { unreadCounts } = get();
-      set({ 
+      set({
         unreadCounts: get()._createNewMap(unreadCounts, conversationId, count)
       });
     },
 
-    // ENHANCED: Remove conversation completely from state
     _removeConversation: (conversationId) => {
       set(state => {
         const conversations = state.conversations.filter(c => c._id !== conversationId);
         
-        // Clean up messages
         const messages = new Map(state.messages);
         messages.delete(conversationId);
         
-        // Clean up unread counts
         const unreadCounts = new Map(state.unreadCounts);
         unreadCounts.delete(conversationId);
         
-        // Clean up active conversation if it's the deleted one
         const activeConversationId = state.activeConversationId === conversationId 
           ? null 
           : state.activeConversationId;
@@ -83,7 +86,7 @@ const useChatStore = create(
       });
     },
 
-    // ============== Actions ==============
+    // ============== Actions - ENHANCED ==============
     setCurrentUser: (user) => {
       set({ currentUser: user });
     },
@@ -97,7 +100,7 @@ const useChatStore = create(
         socketService.leaveConversation(activeConversationId);
       }
       
-      set({ 
+      set({
         activeConversationId: conversationId,
         temporaryConversation: null
       });
@@ -130,7 +133,6 @@ const useChatStore = create(
       };
 
       get()._updateMessages(`temp_${targetUser._id}`, () => []);
-
       set({
         activeConversationId: null,
         temporaryConversation: tempConversation,
@@ -156,9 +158,9 @@ const useChatStore = create(
         set({ conversations: [...conversations], unreadCounts, isLoading: false });
         
       } catch (error) {
-        set({ 
+        set({
           error: formatError(error),
-          isLoading: false 
+          isLoading: false
         });
       }
     },
@@ -206,25 +208,28 @@ const useChatStore = create(
       }
     },
 
-    // ============== Message Operations (Keep existing) ==============
-    sendMessage: async (conversationId, content, type = 'text', replyTo = null) => {
-      if (!content?.trim()) return;
+    // ============== Message Operations - OPTIMIZED ==============
+    sendMessage: async (conversationId, content, type = MESSAGE_TYPES.TEXT, replyTo = null) => {
+      // Use sanitizers for content validation
+      const sanitizedContent = sanitizers.message(content);
+      if (!sanitizedContent) return;
 
       const { currentUser, temporaryConversation, replyToMessage } = get();
       if (!currentUser) return;
 
       let actualConversationId = conversationId;
 
+      // Handle temporary conversation
       if (conversationId?.startsWith('temp_')) {
         const targetUser = temporaryConversation?.participants.find(
-          p => p.user._id !== currentUser._id
+          p => !userHelpers.isSameUser(p.user, currentUser)
         )?.user;
 
         if (!targetUser) return;
 
         try {
-          const response = await chatService.createDirectConversation({ 
-            participantId: targetUser._id 
+          const response = await chatService.createDirectConversation({
+            participantId: targetUser._id
           });
           
           const realConversation = response.data.data;
@@ -245,27 +250,23 @@ const useChatStore = create(
         }
       }
 
+      // Handle reply message with utilities
       let optimisticReplyTo = null;
       if (replyTo || replyToMessage) {
         const replyMsg = replyToMessage || replyTo;
         optimisticReplyTo = {
           _id: replyMsg._id,
           content: replyMsg.content,
-          sender: {
-            _id: replyMsg.sender?._id || replyMsg.sender,
-            name: replyMsg.sender?.name || 'Unknown',
-            email: replyMsg.sender?.email || '',
-            avatar: replyMsg.sender?.avatar || null
-          },
+          sender: userHelpers.getUserDetails(replyMsg.sender),
           createdAt: replyMsg.createdAt,
-          type: replyMsg.type || 'text'
+          type: replyMsg.type || MESSAGE_TYPES.TEXT
         };
       }
 
       const tempId = `temp_${Date.now()}_${Math.random()}`;
       const tempMessage = {
         _id: tempId,
-        content: content.trim(),
+        content: sanitizedContent,
         type,
         replyTo: optimisticReplyTo,
         sender: currentUser,
@@ -279,14 +280,14 @@ const useChatStore = create(
       get()._updateMessages(actualConversationId, (messages) => [...messages, tempMessage]);
       
       const { pendingMessages } = get();
-      set({ 
+      set({
         pendingMessages: get()._createNewMap(pendingMessages, tempId, tempMessage),
-        replyToMessage: null 
+        replyToMessage: null
       });
 
       socketService.sendMessage({
         conversationId: actualConversationId,
-        content: content.trim(),
+        content: sanitizedContent,
         type,
         replyTo: replyTo?._id || replyToMessage?._id || null,
         tempId,
@@ -300,9 +301,9 @@ const useChatStore = create(
         
         get()._updateUnreadCount(conversationId, 0);
         
-        const unreadMessages = conversationMessages.filter(msg => 
-          msg.sender?._id !== currentUser?._id &&
-          !msg.readBy?.some(r => r.user === currentUser?._id)
+        const unreadMessages = conversationMessages.filter(msg =>
+          !userHelpers.isSameUser(msg.sender, currentUser) &&
+          !msg.readBy?.some(r => userHelpers.isSameUser({ _id: r.user }, currentUser))
         );
 
         if (unreadMessages.length > 0) {
@@ -319,11 +320,12 @@ const useChatStore = create(
     },
 
     editMessage: async (messageId, newContent) => {
-      if (!newContent?.trim()) return;
+      const sanitizedContent = sanitizers.message(newContent);
+      if (!sanitizedContent) return;
 
       try {
-        socketService.editMessage(messageId, newContent.trim());
-        await chatService.editMessage({ messageId, newContent: newContent.trim() });
+        socketService.editMessage(messageId, sanitizedContent);
+        await chatService.editMessage({ messageId, newContent: sanitizedContent });
       } catch (error) {
         toast.error('Failed to edit message');
       }
@@ -339,21 +341,20 @@ const useChatStore = create(
     },
 
     toggleReaction: async (messageId, emoji) => {
-      const { currentUser } = get();
+      const { currentUser, messages } = get();
       if (!currentUser) return;
 
-      const { messages } = get();
       const updatedMessages = new Map();
       
       messages.forEach((msgs, convId) => {
         const updated = msgs.map(msg => {
           if (msg._id === messageId) {
             const reactions = msg.reactions || [];
-            const existingIndex = reactions.findIndex(r => 
-              (r.user?._id || r.user) === currentUser._id && r.emoji === emoji
+            const existingIndex = reactions.findIndex(r =>
+              userHelpers.isSameUser({ _id: r.user }, currentUser) && r.emoji === emoji
             );
 
-            const newReactions = existingIndex !== -1 
+            const newReactions = existingIndex !== -1
               ? reactions.filter((_, i) => i !== existingIndex)
               : [...reactions, {
                   emoji,
@@ -373,7 +374,7 @@ const useChatStore = create(
 
       const hasReacted = messages.get(get().activeConversationId)
         ?.find(m => m._id === messageId)
-        ?.reactions?.some(r => (r.user?._id || r.user) === currentUser._id && r.emoji === emoji);
+        ?.reactions?.some(r => userHelpers.isSameUser({ _id: r.user }, currentUser) && r.emoji === emoji);
 
       if (hasReacted) {
         socketService.removeReaction(messageId, emoji);
@@ -383,22 +384,31 @@ const useChatStore = create(
     },
 
     searchUsers: async (query) => {
-      if (!query || query.length < 2) {
+      const sanitizedQuery = sanitizers.searchQuery(query);
+      if (!sanitizedQuery || sanitizedQuery.length < 2) {
         set({ searchResults: [] });
         return;
       }
 
       try {
-        const response = await chatService.searchUsers({ q: query });
-        set({ searchResults: response.data.data || [] });
+        const response = await chatService.searchUsers({ q: sanitizedQuery });
+        const results = response.data.data || [];
+        
+        // Use userHelpers to filter existing conversation partners
+        const { conversations, currentUser } = get();
+        const filteredResults = userHelpers.filterNewUsers(results, conversations, currentUser?._id);
+        
+        set({ searchResults: filteredResults });
       } catch (error) {
         set({ searchResults: [] });
       }
     },
 
-    // ============== ENHANCED GROUP METHODS ==============
+    // ============== GROUP METHODS - ENHANCED WITH UTILITIES ==============
     createGroup: async (groupData) => {
-      if (!groupData.name?.trim()) {
+      // Use sanitizers for input validation
+      const sanitizedName = sanitizers.name(groupData.name);
+      if (!sanitizedName) {
         throw new Error('Group name is required');
       }
 
@@ -406,31 +416,27 @@ const useChatStore = create(
       
       try {
         const response = await chatService.createGroup({
-          name: groupData.name.trim(),
-          description: groupData.description?.trim() || '',
+          name: sanitizedName,
+          description: sanitizers.message(groupData.description || ''),
           participants: groupData.participants || []
         });
         
         const newGroup = response.data.data;
         
-        // Add to conversations list at the top
         set(state => ({
           conversations: [newGroup, ...state.conversations],
           isLoading: false
         }));
         
-        // Initialize empty messages and unread count
         get()._updateMessages(newGroup._id, () => []);
         get()._updateUnreadCount(newGroup._id, 0);
         
-        // Clear any loading errors
         set(state => {
           const newErrors = new Set(state._messageLoadingErrors);
           newErrors.delete(newGroup._id);
           return { _messageLoadingErrors: newErrors };
         });
         
-        // Emit socket event for real-time updates
         socketService.emit('group_created', { group: newGroup });
         
         return newGroup;
@@ -442,17 +448,22 @@ const useChatStore = create(
 
     updateGroup: async (groupId, updateData) => {
       try {
-        const response = await chatService.updateGroup(groupId, updateData);
+        // Sanitize input data
+        const sanitizedData = {
+          ...updateData,
+          ...(updateData.name && { name: sanitizers.name(updateData.name) }),
+          ...(updateData.description && { description: sanitizers.message(updateData.description) })
+        };
+
+        const response = await chatService.updateGroup(groupId, sanitizedData);
         const updatedGroup = response.data.data;
         
-        // Update in conversations list
         set(state => ({
-          conversations: state.conversations.map(conv => 
+          conversations: state.conversations.map(conv =>
             conv._id === groupId ? { ...conv, ...updatedGroup } : conv
           )
         }));
         
-        // Emit socket event for real-time updates
         socketService.emit('group_updated', { groupId, updateData: updatedGroup });
         
         return updatedGroup;
@@ -463,20 +474,23 @@ const useChatStore = create(
 
     updateGroupInfo: async (groupId, info) => {
       try {
-        const response = await chatService.updateGroup(groupId, info);
+        const sanitizedInfo = {
+          name: sanitizers.name(info.name),
+          description: sanitizers.message(info.description || '')
+        };
+
+        const response = await chatService.updateGroup(groupId, sanitizedInfo);
         const updatedGroup = response.data.data;
         
-        // Update conversation with new info
         set(state => ({
-          conversations: state.conversations.map(conv => 
+          conversations: state.conversations.map(conv =>
             conv._id === groupId ? { ...conv, ...updatedGroup } : conv
           )
         }));
         
-        // Emit socket event for all participants
-        socketService.emit('group_info_updated', { 
-          groupId, 
-          info: { name: info.name, description: info.description }
+        socketService.emit('group_info_updated', {
+          groupId,
+          info: sanitizedInfo
         });
         
         return updatedGroup;
@@ -485,7 +499,6 @@ const useChatStore = create(
       }
     },
 
-    // FIXED: Enhanced add participants with proper state updates
     addGroupParticipants: async (groupId, participants) => {
       try {
         console.log('Adding participants to group:', { groupId, participants });
@@ -495,16 +508,14 @@ const useChatStore = create(
         
         console.log('Participants added successfully:', updatedGroup);
         
-        // Update conversation with new participants
         set(state => ({
-          conversations: state.conversations.map(conv => 
+          conversations: state.conversations.map(conv =>
             conv._id === groupId ? { ...conv, ...updatedGroup } : conv
           )
         }));
         
-        // Emit socket event for real-time updates to all participants
-        socketService.emit('participants_added', { 
-          groupId, 
+        socketService.emit('participants_added', {
+          groupId,
           participants: updatedGroup.participants,
           addedParticipants: participants
         });
@@ -516,12 +527,10 @@ const useChatStore = create(
       }
     },
 
-    // ENHANCED: Remove participant with proper cleanup
     removeGroupParticipant: async (groupId, participantId) => {
       try {
         await chatService.removeGroupParticipant(groupId, participantId);
         
-        // Update local state
         set(state => ({
           conversations: state.conversations.map(conv => {
             if (conv._id === groupId) {
@@ -534,16 +543,12 @@ const useChatStore = create(
           })
         }));
         
-        // If current user was removed, remove from their conversation list
         const { currentUser } = get();
         if (participantId === currentUser?._id) {
           get()._removeConversation(groupId);
-          
-          // Leave socket room
           socketService.leaveConversation(groupId);
         }
         
-        // Emit socket events
         socketService.emit('participant_removed', { groupId, participantId });
         
       } catch (error) {
@@ -551,18 +556,16 @@ const useChatStore = create(
       }
     },
 
-    // ENHANCED: Role change with real-time updates
     changeParticipantRole: async (groupId, participantId, role) => {
       try {
         await chatService.changeParticipantRole(groupId, participantId, role);
         
-        // Update local state
         set(state => ({
           conversations: state.conversations.map(conv => {
             if (conv._id === groupId) {
               return {
                 ...conv,
-                participants: conv.participants?.map(p => 
+                participants: conv.participants?.map(p =>
                   p.user._id === participantId ? { ...p, role } : p
                 ) || []
               };
@@ -571,7 +574,6 @@ const useChatStore = create(
           })
         }));
         
-        // Emit socket event for real-time updates
         socketService.emit('participant_role_changed', { groupId, participantId, role });
         
       } catch (error) {
@@ -579,18 +581,13 @@ const useChatStore = create(
       }
     },
 
-    // ENHANCED: Leave group with complete cleanup
     leaveGroup: async (groupId) => {
       try {
         await chatService.leaveGroup(groupId);
         
-        // Complete cleanup from state
         get()._removeConversation(groupId);
-        
-        // Leave socket room
         socketService.leaveConversation(groupId);
         
-        // Emit socket event to notify other participants
         socketService.emit('user_left_group', { groupId, userId: get().currentUser?._id });
         
       } catch (error) {
@@ -598,19 +595,13 @@ const useChatStore = create(
       }
     },
 
-    // ENHANCED: Delete group with complete cleanup for all members
     deleteGroup: async (groupId) => {
       try {
-        // First mark as deleted on server
         await chatService.updateGroup(groupId, { deleted: true });
         
-        // Remove from local state
         get()._removeConversation(groupId);
-        
-        // Leave socket room
         socketService.leaveConversation(groupId);
         
-        // CRITICAL: Emit socket event to remove group from ALL participants' lists
         socketService.emit('group_deleted', { groupId });
         
       } catch (error) {
@@ -620,13 +611,13 @@ const useChatStore = create(
 
     updateConversation: (conversationId, updatedData) => {
       set(state => ({
-        conversations: state.conversations.map(conv => 
+        conversations: state.conversations.map(conv =>
           conv._id === conversationId ? { ...conv, ...updatedData } : conv
         )
       }));
     },
 
-    // ============== ENHANCED Socket Events Setup ==============
+    // ============== Socket Events Setup - OPTIMIZED ==============
     setupSocketEvents: () => {
       const { _eventsSetup } = get();
       if (_eventsSetup) return;
@@ -641,7 +632,7 @@ const useChatStore = create(
           });
 
           const { activeConversationId, currentUser } = get();
-          const isOwnMessage = message.sender?._id === currentUser?._id;
+          const isOwnMessage = userHelpers.isSameUser(message.sender, currentUser);
           const isActiveConversation = activeConversationId === conversationId;
 
           if (!isOwnMessage) {
@@ -664,14 +655,14 @@ const useChatStore = create(
           get()._updateMessages(conversationId, (messages) =>
             messages.map(m => {
               if (m._id === tempId) {
-                const preservedReplyTo = m.replyTo && (!message.replyTo?.sender || !message.replyTo.sender.name) 
-                  ? m.replyTo 
+                const preservedReplyTo = m.replyTo && (!message.replyTo?.sender || !message.replyTo.sender.name)
+                  ? m.replyTo
                   : message.replyTo;
                 
-                return { 
-                  ...message, 
+                return {
+                  ...message,
                   replyTo: preservedReplyTo,
-                  isOptimistic: false 
+                  isOptimistic: false
                 };
               }
               return m;
@@ -707,7 +698,7 @@ const useChatStore = create(
           const updatedMessages = new Map();
           
           messages.forEach((msgs, convId) => {
-            const updated = msgs.map(msg => 
+            const updated = msgs.map(msg =>
               msg._id === messageId ? { ...msg, reactions: reactions || [] } : msg
             );
             updatedMessages.set(convId, updated);
@@ -722,7 +713,7 @@ const useChatStore = create(
           
           messages.forEach((msgs, convId) => {
             const updated = msgs.map(msg =>
-              msg._id === messageId 
+              msg._id === messageId
                 ? { ...msg, content: newContent, editedAt, isEdited: true }
                 : msg
             );
@@ -738,7 +729,7 @@ const useChatStore = create(
           
           messages.forEach((msgs, convId) => {
             const updated = msgs.map(msg =>
-              msg._id === messageId 
+              msg._id === messageId
                 ? { ...msg, isDeleted: true, content: 'This message was deleted' }
                 : msg
             );
@@ -748,14 +739,13 @@ const useChatStore = create(
           set({ messages: updatedMessages });
         },
 
-        // ENHANCED GROUP SOCKET EVENTS
+        // GROUP SOCKET EVENTS - ENHANCED
         [SOCKET_EVENTS.USER_JOINED_GROUP]: ({ groupId, user, participants }) => {
           set(state => ({
             conversations: state.conversations.map(conv => {
               if (conv._id === groupId) {
-                // Use updated participants from server if available
                 const newParticipants = participants || [...(conv.participants || [])];
-                if (!participants && !newParticipants.find(p => p.user._id === user._id)) {
+                if (!participants && !newParticipants.find(p => userHelpers.isSameUser(p.user, user))) {
                   newParticipants.push({ user, role: 'member' });
                 }
                 return { ...conv, participants: newParticipants };
@@ -764,9 +754,8 @@ const useChatStore = create(
             })
           }));
           
-          // Show notification if not current user
           const { currentUser } = get();
-          if (user._id !== currentUser?._id) {
+          if (!userHelpers.isSameUser(user, currentUser)) {
             toast.success(`${user.name} joined the group`);
           }
         },
@@ -784,36 +773,29 @@ const useChatStore = create(
             })
           }));
           
-          // Show notification
           toast.info(`${userName || 'Someone'} left the group`);
         },
 
-        // NEW: Group deleted event - removes group from all participants
         'group_deleted': ({ groupId }) => {
-          const { currentUser } = get();
           get()._removeConversation(groupId);
-          
-          // Show notification
           toast.error('Group was deleted by admin');
         },
 
-        // NEW: Group info updated
         'group_info_updated': ({ groupId, info }) => {
           set(state => ({
-            conversations: state.conversations.map(conv => 
+            conversations: state.conversations.map(conv =>
               conv._id === groupId ? { ...conv, ...info } : conv
             )
           }));
         },
 
-        // NEW: Participant role changed
         'participant_role_changed': ({ groupId, participantId, role }) => {
           set(state => ({
             conversations: state.conversations.map(conv => {
               if (conv._id === groupId) {
                 return {
                   ...conv,
-                  participants: conv.participants?.map(p => 
+                  participants: conv.participants?.map(p =>
                     p.user._id === participantId ? { ...p, role } : p
                   ) || []
                 };
@@ -823,18 +805,15 @@ const useChatStore = create(
           }));
         },
 
-        // NEW: Participant removed
         'participant_removed': ({ groupId, participantId }) => {
           const { currentUser } = get();
           
-          // If current user was removed, remove group from their list
           if (participantId === currentUser?._id) {
             get()._removeConversation(groupId);
             toast.error('You were removed from the group');
             return;
           }
           
-          // Otherwise just update participants list
           set(state => ({
             conversations: state.conversations.map(conv => {
               if (conv._id === groupId) {
@@ -854,7 +833,7 @@ const useChatStore = create(
       });
     },
 
-    // ============== Utilities ==============
+    // ============== Utilities - ENHANCED WITH HELPERS ==============
     updateConversationLastMessage: (conversationId, message) => {
       const { conversations } = get();
       const updated = conversations.map(conv => {
@@ -862,7 +841,7 @@ const useChatStore = create(
           return {
             ...conv,
             lastMessage: {
-              content: message.content,
+              content: messageHelpers.getMessagePreview(message),
               sender: message.sender,
               timestamp: message.createdAt,
             },
@@ -892,6 +871,32 @@ const useChatStore = create(
     getCurrentConversationId: () => {
       const { temporaryConversation, activeConversationId } = get();
       return temporaryConversation?._id || activeConversationId;
+    },
+
+    // Use conversationHelpers for consistent naming
+    getConversationDisplayName: (conversationId) => {
+      const conversation = get().conversations.find(c => c._id === conversationId);
+      const { currentUser } = get();
+      return conversationHelpers.getConversationName(conversation, currentUser?._id);
+    },
+
+    getConversationAvatar: (conversationId) => {
+      const conversation = get().conversations.find(c => c._id === conversationId);
+      const { currentUser } = get();
+      return conversationHelpers.getConversationAvatar(conversation, currentUser?._id);
+    },
+
+    // Use permissionHelpers for group permissions
+    canPerformGroupAction: (groupId, action) => {
+      const conversation = get().conversations.find(c => c._id === groupId);
+      const { currentUser } = get();
+      return permissionHelpers.canPerformGroupAction(conversation, currentUser?._id, action);
+    },
+
+    getUserRole: (groupId) => {
+      const conversation = get().conversations.find(c => c._id === groupId);
+      const { currentUser } = get();
+      return permissionHelpers.getUserRole(conversation, currentUser?._id);
     },
 
     setMessageEditing: (messageId) => set({ messageEditingId: messageId }),

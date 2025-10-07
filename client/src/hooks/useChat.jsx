@@ -1,12 +1,17 @@
 /**
- * Chat Hook - ENHANCED GROUP COORDINATION
- * Simplified without direct store access
+ * Chat Hook - OPTIMIZED WITH UTILITIES
+ * Enhanced group coordination with utility functions
  */
-
 import { useEffect, useRef, useCallback } from 'react';
 import useChatStore from '../store/chatStore';
 import useAuthStore from '../store/authStore';
 import useSocketStore from '../store/socketStore';
+import { 
+  conversationHelpers, 
+  messageHelpers, 
+  permissionHelpers 
+} from '../utils/chatHelpers';
+import { MESSAGE_TYPES } from '../utils/constants';
 
 export const useChat = () => {
   const { user } = useAuthStore();
@@ -47,7 +52,7 @@ export const useChat = () => {
     setupSocketEvents,
     updateConversation,
     
-    // GROUP METHODS - ALL ENHANCED
+    // GROUP METHODS
     createGroup,
     updateGroup,
     updateGroupInfo,
@@ -56,6 +61,12 @@ export const useChat = () => {
     changeParticipantRole,
     leaveGroup,
     deleteGroup,
+    
+    // NEW: Utility methods from store
+    canPerformGroupAction,
+    getUserRole,
+    getConversationDisplayName,
+    getConversationAvatar,
   } = chatStore;
 
   // Track initialization to prevent duplicate calls
@@ -64,7 +75,6 @@ export const useChat = () => {
     conversations: false,
     socketEvents: false,
   });
-
   const loadedMessages = useRef(new Set());
 
   // Set current user when authenticated
@@ -114,15 +124,13 @@ export const useChat = () => {
     }
   }, [activeConversationId]);
 
-  // SIMPLIFIED: Group creation with automatic conversation switching
+  // ENHANCED: Group creation with automatic conversation switching
   const enhancedCreateGroup = useCallback(async (groupData) => {
     try {
       const newGroup = await createGroup(groupData);
       
-      // Mark as loaded to prevent duplicate loading
       loadedMessages.current.add(newGroup._id);
       
-      // Auto-switch to the new group after a short delay
       setTimeout(() => {
         setActiveConversation(newGroup._id);
       }, 500);
@@ -137,14 +145,11 @@ export const useChat = () => {
   // ENHANCED: Group deletion with conversation cleanup
   const enhancedDeleteGroup = useCallback(async (groupId) => {
     try {
-      // Switch to no conversation if deleting current one
       if (activeConversationId === groupId) {
         setActiveConversation(null);
       }
       
       await deleteGroup(groupId);
-      
-      // Clear from loaded messages
       loadedMessages.current.delete(groupId);
       
     } catch (error) {
@@ -156,14 +161,11 @@ export const useChat = () => {
   // ENHANCED: Leave group with conversation cleanup
   const enhancedLeaveGroup = useCallback(async (groupId) => {
     try {
-      // Switch to no conversation if leaving current one
       if (activeConversationId === groupId) {
         setActiveConversation(null);
       }
       
       await leaveGroup(groupId);
-      
-      // Clear from loaded messages
       loadedMessages.current.delete(groupId);
       
     } catch (error) {
@@ -172,12 +174,12 @@ export const useChat = () => {
     }
   }, [leaveGroup, activeConversationId, setActiveConversation]);
 
-  // Get current conversation data
+  // Get current conversation data using helpers
   const currentConversationId = getCurrentConversationId();
   const currentConversation = getCurrentConversation();
   const currentMessages = messages.get(currentConversationId) || [];
 
-  // Enhanced actions with group coordination
+  // Enhanced actions with group coordination and utilities
   const chatActions = {
     setActiveConversation,
     setTemporaryConversation,
@@ -195,7 +197,7 @@ export const useChat = () => {
     markConversationAsRead,
     updateConversation,
     
-    // ENHANCED GROUP METHODS with proper coordination
+    // ENHANCED GROUP METHODS
     createGroup: enhancedCreateGroup,
     updateGroup,
     updateGroupInfo,
@@ -205,10 +207,10 @@ export const useChat = () => {
     leaveGroup: enhancedLeaveGroup,
     deleteGroup: enhancedDeleteGroup,
     
-    // Convenience methods
+    // UTILITY METHODS - ENHANCED WITH HELPERS
     sendTextMessage: (content, replyTo = null) => {
       if (currentConversationId && content?.trim()) {
-        return sendMessage(currentConversationId, content.trim(), 'text', replyTo);
+        return sendMessage(currentConversationId, content.trim(), MESSAGE_TYPES.TEXT, replyTo);
       }
     },
     
@@ -216,19 +218,20 @@ export const useChat = () => {
       return conversations.find(c => c._id === id);
     },
     
+    // Use conversationHelpers for consistent checking
     isActiveConversation: (id) => {
-      return activeConversationId === id;
+      return conversationHelpers.isConversationActive(id, activeConversationId, temporaryConversation);
     },
-
-    // GROUP UTILITY METHODS
+    
+    // GROUP UTILITY METHODS - ENHANCED WITH PERMISSION HELPERS
     isGroupAdmin: (groupId, userId = user?._id) => {
       const group = conversations.find(c => c._id === groupId);
-      return group?.participants?.find(p => p.user._id === userId)?.role === 'admin';
+      return permissionHelpers.hasGroupPermission(group, userId, 'admin');
     },
     
     isGroupMember: (groupId, userId = user?._id) => {
       const group = conversations.find(c => c._id === groupId);
-      return group?.participants?.some(p => p.user._id === userId);
+      return permissionHelpers.hasGroupPermission(group, userId, 'member');
     },
     
     getGroupParticipants: (groupId) => {
@@ -238,8 +241,46 @@ export const useChat = () => {
     
     canManageGroup: (groupId, userId = user?._id) => {
       const group = conversations.find(c => c._id === groupId);
-      const userRole = group?.participants?.find(p => p.user._id === userId)?.role;
-      return userRole === 'admin' || userRole === 'moderator';
+      return permissionHelpers.hasGroupPermission(group, userId, 'moderate');
+    },
+    
+    // NEW: Use store utility methods
+    canPerformAction: (groupId, action) => {
+      return canPerformGroupAction(groupId, action);
+    },
+    
+    getUserGroupRole: (groupId) => {
+      return getUserRole(groupId);
+    },
+    
+    // Use conversationHelpers for display
+    getDisplayName: (conversationId) => {
+      return getConversationDisplayName ? getConversationDisplayName(conversationId) : 
+        conversationHelpers.getConversationName(
+          conversations.find(c => c._id === conversationId), 
+          user?._id
+        );
+    },
+    
+    getAvatar: (conversationId) => {
+      return getConversationAvatar ? getConversationAvatar(conversationId) :
+        conversationHelpers.getConversationAvatar(
+          conversations.find(c => c._id === conversationId), 
+          user?._id
+        );
+    },
+    
+    // Use messageHelpers for message operations
+    canEditMessage: (message) => {
+      return messageHelpers.isMessageEditable(message, user?._id);
+    },
+    
+    getMessagePreview: (message) => {
+      return messageHelpers.getMessagePreview(message);
+    },
+    
+    shouldGroupMessage: (currentMsg, previousMsg) => {
+      return messageHelpers.shouldGroupMessages(currentMsg, previousMsg);
     },
   };
 
