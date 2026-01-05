@@ -12,7 +12,14 @@ export const useConversationInfo = (conversation) => {
 
   const info = useMemo(() => {
     if (!conversation) {
-      return { name: 'Select a conversation', avatar: null, isOnline: false, status: 'Unknown', type: null, userId: null };
+      return { 
+        name: 'Select a conversation', 
+        avatar: null, 
+        isOnline: false, 
+        status: 'Unknown', 
+        type: null, 
+        userId: null 
+      };
     }
 
     const name = conversationHelpers.getConversationName(conversation, user?._id);
@@ -21,15 +28,25 @@ export const useConversationInfo = (conversation) => {
     if (conversation.type === 'group') {
       const typingUsers = getTypingUsers(conversation._id);
       return {
-        name, avatar, isOnline: false, type: 'group', userId: null,
-        status: typingUsers.length > 0 ? `${typingUsers.length} typing...` : `${conversation.participants?.length || 0} members`,
+        name, 
+        avatar, 
+        isOnline: false, 
+        type: 'group', 
+        userId: null,
+        status: typingUsers.length > 0 
+          ? `${typingUsers.length} typing...` 
+          : `${conversation.participants?.length || 0} members`,
       };
     }
 
-    const otherParticipant = conversation.participants?.find(p => !userHelpers.isSameUser(p.user, user));
+    const otherParticipant = conversation.participants?.find(
+      p => !userHelpers.isSameUser(p.user, user)
+    );
     const otherUser = userHelpers.getUserDetails(otherParticipant?.user);
     const isOnline = isUserOnline(otherUser._id);
-    const isTyping = getTypingUsers(conversation._id).some(u => userHelpers.isSameUser(u, { _id: otherUser._id }));
+    const isTyping = getTypingUsers(conversation._id).some(
+      u => userHelpers.isSameUser(u, { _id: otherUser._id })
+    );
 
     return {
       name: otherUser.name,
@@ -43,8 +60,11 @@ export const useConversationInfo = (conversation) => {
 
   const getLastMessagePreview = useMemo(() => {
     if (!conversation?.lastMessage?.content) return 'No messages yet';
-    const preview = messageHelpers.getMessagePreview(conversation.lastMessage);
-    const isOwn = userHelpers.isSameUser(conversation.lastMessage.sender, user);
+    
+    const { content, sender } = conversation.lastMessage;
+    const preview = content.length > 40 ? content.substring(0, 40) + '...' : content;
+    const isOwn = userHelpers.isSameUser(sender, user);
+    
     return isOwn ? `You: ${preview}` : preview;
   }, [conversation?.lastMessage, user]);
 

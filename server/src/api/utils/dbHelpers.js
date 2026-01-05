@@ -20,10 +20,13 @@ export const populateConversationDetails = (query) => {
 };
 
 /**
- * Common population helper for user conversations
+ * Common population helper for user conversations with last message sender
  */
 export const populateUserConversations = (query) => {
-  return populateConversationDetails(query).sort({ 'lastMessage.timestamp': -1 });
+  return query
+    .populate(DB_POPULATE.PARTICIPANTS)
+    .populate(DB_POPULATE.LAST_MESSAGE_SENDER)
+    .sort({ 'lastMessage.timestamp': -1 });
 };
 
 /**
@@ -47,13 +50,15 @@ export const formatReactions = (reactions) => {
  * Common query for finding user's active conversations
  */
 export const findUserActiveConversations = (model, userId) => {
-  return populateUserConversations(
-    model.find({ 
+  return model
+    .find({ 
       'participants.user': userId, 
       isActive: true, 
       'settings.archived': false 
     })
-  );
+    .populate('participants.user', 'name email avatar status lastSeen')
+    .populate('lastMessage.sender', 'name email avatar')  // Add this line
+    .sort({ 'lastMessage.timestamp': -1 });
 };
 
 /**

@@ -7,16 +7,25 @@ import { ERROR_MESSAGES } from '../constants/index.js';
 
 /**
  * Get all active conversations for a user (excluding archived),
- * with unread counts.
+ * with unread counts and REAL last message fetched from Message collection.
  */
 export const getUserConversations = async (userId) => {
-  const conversations = await findUserActiveConversations(Conversation, userId);
+  // Fetch conversations with proper population
+  const conversations = await Conversation.find({ 
+    'participants.user': userId, 
+    isActive: true, 
+    'settings.archived': false 
+  })
+  .populate('participants.user', 'name email avatar status lastSeen')
+  .populate('lastMessage.sender', 'name email avatar')
+  .sort({ 'lastMessage.timestamp': -1 });
 
   return Promise.all(
     conversations.map(async (conv) => {
       const participant = conv.getParticipant(userId);
       if (!participant) return { ...conv.toObject(), unreadCount: 0 };
 
+      // Count unread messages
       const unreadCount = await Message.countDocuments({
         conversation: conv._id,
         createdAt: { $gt: participant.lastRead },
@@ -24,7 +33,58 @@ export const getUserConversations = async (userId) => {
         isDeleted: false,
       });
 
-      return { ...conv.toObject(), unreadCount };
+      // FETCH ACTUAL LAST MESSAGE FROM MESSAGE COLLECTION
+      const actualLastMessage = await Message.findOne({
+        conversation: conv._id,
+        isDeleted: false
+      })
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .populate('sender', 'name email avatar')
+      .lean();
+
+      const conversationObj = conv.toObject();
+      
+      // Use actual last message if found, otherwise use stored one or empty
+      let formattedLastMessage;
+      
+      if (actualLastMessage) {
+        formattedLastMessage = {
+          content: actualLastMessage.content,
+          sender: actualLastMessage.sender ? {
+            _id: actualLastMessage.sender._id,
+            name: actualLastMessage.sender.name,
+            email: actualLastMessage.sender.email,
+            avatar: actualLastMessage.sender.avatar
+          } : null,
+          timestamp: actualLastMessage.createdAt
+        };
+      } else if (conversationObj.lastMessage && conversationObj.lastMessage.content) {
+        // Fallback to stored lastMessage if it has content
+        formattedLastMessage = {
+          content: conversationObj.lastMessage.content,
+          sender: conversationObj.lastMessage.sender ? {
+            _id: conversationObj.lastMessage.sender._id,
+            name: conversationObj.lastMessage.sender.name,
+            email: conversationObj.lastMessage.sender.email,
+            avatar: conversationObj.lastMessage.sender.avatar
+          } : null,
+          timestamp: conversationObj.lastMessage.timestamp
+        };
+      } else {
+        // No messages at all
+        formattedLastMessage = {
+          content: '',
+          sender: null,
+          timestamp: conv.createdAt
+        };
+      }
+
+      return { 
+        ...conversationObj, 
+        lastMessage: formattedLastMessage,
+        unreadCount 
+      };
     })
   );
 };
@@ -60,7 +120,7 @@ export const sendMessage = async (conversationId, userId, content, type = 'text'
     const otherParticipantId = convo.participants.find(p => p.user.toString() !== userId.toString())?.user;
     if (otherParticipantId) {
       const otherUser = await User.findById(otherParticipantId);
-      if (otherUser.blockedUsers.includes(userId)) {
+      if (otherUser && otherUser.blockedUsers.includes(userId)) {
         const error = new Error(ERROR_MESSAGES.BLOCKED_BY_RECIPIENT);
         error.statusCode = 403;
         throw error;
@@ -79,7 +139,9 @@ export const sendMessage = async (conversationId, userId, content, type = 'text'
   await message.save();
   await message.populate('sender', 'name email avatar');
 
+  // Update last message in conversation
   await convo.updateLastMessage(content, userId);
+  
   return message;
 };
 
@@ -95,6 +157,20 @@ export const editMessage = async (messageId, userId, newContent) => {
     throw error;
   }
   const updatedMessage = await message.editContent(newContent);
+  
+  // Update last message in conversation if this was the last message
+  const convo = await Conversation.findById(message.conversation);
+  if (convo && convo.lastMessage?.sender?.toString() === userId.toString()) {
+    const lastMessageInConvo = await Message.findOne({ 
+      conversation: message.conversation,
+      isDeleted: false 
+    }).sort({ createdAt: -1 });
+    
+    if (lastMessageInConvo && lastMessageInConvo._id.toString() === messageId.toString()) {
+      await convo.updateLastMessage(newContent, userId);
+    }
+  }
+  
   return updatedMessage;
 };
 
@@ -118,7 +194,25 @@ export const softDeleteMessage = async (messageId, userId) => {
     throw error;
   }
 
-  return message.softDelete();
+  const deletedMessage = await message.softDelete();
+  
+  // Update last message in conversation if this was the last message
+  if (convo.lastMessage?.sender?.toString() === message.sender.toString()) {
+    const newLastMessage = await Message.findOne({ 
+      conversation: message.conversation,
+      isDeleted: false 
+    }).sort({ createdAt: -1 });
+    
+    if (newLastMessage) {
+      await convo.updateLastMessage(newLastMessage.content, newLastMessage.sender);
+    } else {
+      // No messages left, clear last message
+      convo.lastMessage = { content: '', timestamp: new Date() };
+      await convo.save();
+    }
+  }
+  
+  return deletedMessage;
 };
 
 /**
@@ -196,7 +290,8 @@ export const createOrGetDirectConversation = async (userId, participantId) => {
       { 'participants.user': userId },
       { 'participants.user': participantId }
     ]
-  }).populate('participants.user', 'name email avatar status lastSeen');
+  }).populate('participants.user', 'name email avatar status lastSeen')
+    .populate('lastMessage.sender', 'name email avatar');
 
   if (existing) return existing;
 
@@ -218,6 +313,7 @@ export const createOrGetDirectConversation = async (userId, participantId) => {
   
   await convo.save();
   await convo.populate('participants.user', 'name email avatar status lastSeen');
+  await convo.populate('lastMessage.sender', 'name email avatar');
   return convo;
 };
 
@@ -353,8 +449,6 @@ export const setConversationArchivedStatus = async (conversationId, userId, arch
   await convo.save();
   return convo;
 };
-
-// REMOVED: searchActiveUsers function (moved to userService.js to avoid duplication)
 
 export default {
   getUserConversations,

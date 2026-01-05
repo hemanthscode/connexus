@@ -1,6 +1,5 @@
 /**
- * Conversation Item - ALREADY OPTIMIZED
- * Keeping existing optimized version (no changes needed)
+ * Conversation Item - OPTIMIZED WITH LAST MESSAGE DISPLAY
  */
 import { memo, forwardRef } from 'react';
 import { motion } from 'framer-motion';
@@ -26,6 +25,53 @@ const ConversationItem = memo(forwardRef(({
   const timeDisplay = conversation.lastMessage?.timestamp 
     ? formatRelativeTime(conversation.lastMessage.timestamp, { shortForm: true }) : '';
 
+  // Enhanced last message preview with sender info
+  const getLastMessagePreview = () => {
+    if (!conversation.lastMessage || !conversation.lastMessage.content) {
+      return <span className="text-gray-500 italic">No messages yet</span>;
+    }
+
+    const { content, sender } = conversation.lastMessage;
+    const isOwnMessage = sender?._id === user?._id;
+    const senderName = isOwnMessage ? 'You' : (sender?.name?.split(' ')[0] || 'Someone');
+    
+    const truncatedContent = content.length > 35 
+      ? content.substring(0, 35) + '...' 
+      : content;
+
+    // For group chats, always show sender name
+    if (conversation.type === 'group') {
+      return (
+        <>
+          <span className={`${unreadCount > 0 ? 'text-gray-300' : 'text-gray-500'} font-medium`}>
+            {senderName}:
+          </span>
+          {' '}
+          <span className={unreadCount > 0 ? 'text-white' : 'text-gray-400'}>
+            {truncatedContent}
+          </span>
+        </>
+      );
+    }
+
+    // For direct chats, show "You:" only for own messages
+    return (
+      <>
+        {isOwnMessage && (
+          <>
+            <span className={`${unreadCount > 0 ? 'text-gray-300' : 'text-gray-500'} font-medium`}>
+              You:
+            </span>
+            {' '}
+          </>
+        )}
+        <span className={unreadCount > 0 ? 'text-white' : 'text-gray-400'}>
+          {truncatedContent}
+        </span>
+      </>
+    );
+  };
+
   // Consolidated styling logic
   const getItemStyle = () => {
     if (isActive) return 'bg-blue-600/20 border border-blue-500/40 shadow-lg shadow-blue-500/10';
@@ -43,6 +89,7 @@ const ConversationItem = memo(forwardRef(({
     const colorMap = {
       active: { title: 'text-blue-100', time: 'text-blue-300', preview: 'text-blue-200/80' },
       typing: { preview: 'text-blue-400 italic font-medium' },
+      unread: { title: 'text-white font-bold', preview: 'font-medium' },
       default: { 
         title: 'text-white group-hover:text-blue-100', 
         time: 'text-gray-400 group-hover:text-gray-300',
@@ -52,6 +99,8 @@ const ConversationItem = memo(forwardRef(({
 
     if (hasTyping && type === 'preview') return `${baseStyles[type]} ${colorMap.typing.preview}`;
     if (isActive) return `${baseStyles[type]} ${colorMap.active[type] || colorMap.active.title}`;
+    if (unreadCount > 0 && type === 'title') return `${baseStyles[type]} ${colorMap.unread.title}`;
+    if (unreadCount > 0 && type === 'preview') return `${baseStyles[type]} ${colorMap.unread.preview}`;
     return `${baseStyles[type]} ${colorMap.default[type]}`;
   };
 
@@ -103,8 +152,8 @@ const ConversationItem = memo(forwardRef(({
                 </div>
               </div>
             )}
-            <p className={getTextStyle('preview')}>
-              {typingText || info.getLastMessagePreview}
+            <p className={`${getTextStyle('preview')} line-clamp-1`}>
+              {hasTyping ? typingText : getLastMessagePreview()}
             </p>
           </div>
         </div>

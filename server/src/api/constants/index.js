@@ -82,7 +82,7 @@ export const DB_SELECTORS = {
 export const DB_POPULATE = {
   SENDER: { path: 'sender', select: 'name email avatar' },
   PARTICIPANTS: { path: 'participants.user', select: 'name email avatar status lastSeen' },
-  LAST_MESSAGE_SENDER: { path: 'lastMessage.sender', select: 'name avatar' },
+  LAST_MESSAGE_SENDER: { path: 'lastMessage.sender', select: 'name email avatar' },
   REACTIONS_USER: { path: 'reactions.user', select: 'name email avatar' },
   REPLY_TO: { path: 'replyTo', select: 'content sender' },
   REPLY_TO_WITH_SENDER: { 
