@@ -1,28 +1,62 @@
 import dotenv from 'dotenv';
 import Joi from 'joi';
 
+// Load env if present (optional)
 dotenv.config();
 
-const envSchema = Joi.object({
-  JWT_SECRET: Joi.string().min(32).required().description('Secret key for JWT signing'),
-  MONGODB_URI: Joi.string().uri().required().description('MongoDB connection URI'),
-  PORT: Joi.number().default(5000).description('Server listening port'),
-  NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
-  CLIENT_URL: Joi.string().uri().default('http://localhost:3000').description('Allowed client URL for CORS'),
-  JWT_EXPIRE: Joi.string().default('7d').description('JWT token expiry duration'),
-  JWT_REFRESH_EXPIRE: Joi.string().default('30d').description('JWT refresh token expiry duration'),
-  APP_NAME: Joi.string().default('Connexus').description('Application name'),
-  API_VERSION: Joi.string().default('v1').description('API version prefix'),
-  RATE_LIMIT_WINDOW_MS: Joi.number().default(60000).description('Rate limit window in milliseconds'),
-  RATE_LIMIT_MAX_REQUESTS: Joi.number().default(1000).description('Max requests per rate limit window'),
-  SOCKET_PING_TIMEOUT: Joi.number().default(60000).description('Socket.IO ping timeout duration'),
-  SOCKET_PING_INTERVAL: Joi.number().default(25000).description('Socket.IO ping interval'),
-  MONGODB_MAX_POOL_SIZE: Joi.number().default(100).description('MongoDB max connection pool size'),
-  MONGODB_MIN_POOL_SIZE: Joi.number().default(5).description('MongoDB min connection pool size'),
-})
-  .unknown();
+/**
+ * Hardcoded defaults for evaluation / mentor review
+ * Used only when process.env values are missing
+ */
+const DEFAULTS = {
+  MONGODB_URI:
+    'mongodb+srv://hemanths7dev:antdev%4007@quantum.a3za7.mongodb.net/connexus',
+  JWT_SECRET:
+    'your_super_secure_jwt_secret_key_at_least_32_chars_long_change_this_in_production',
+  PORT: 5000,
+  NODE_ENV: 'development',
+  CLIENT_URL: 'http://localhost:3000',
+  JWT_EXPIRE: '7d',
+  JWT_REFRESH_EXPIRE: '30d',
+  APP_NAME: 'Connexus',
+  API_VERSION: 'v1',
+  RATE_LIMIT_WINDOW_MS: 60000,
+  RATE_LIMIT_MAX_REQUESTS: 1000,
+  SOCKET_PING_TIMEOUT: 60000,
+  SOCKET_PING_INTERVAL: 25000,
+  MONGODB_MAX_POOL_SIZE: 100,
+  MONGODB_MIN_POOL_SIZE: 5,
+};
 
-const { error, value: envVars } = envSchema.validate(process.env, { abortEarly: false });
+const envSchema = Joi.object({
+  JWT_SECRET: Joi.string().min(32).required(),
+  MONGODB_URI: Joi.string().uri().required(),
+  PORT: Joi.number().default(DEFAULTS.PORT),
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'test')
+    .default(DEFAULTS.NODE_ENV),
+  CLIENT_URL: Joi.string().uri().default(DEFAULTS.CLIENT_URL),
+  JWT_EXPIRE: Joi.string().default(DEFAULTS.JWT_EXPIRE),
+  JWT_REFRESH_EXPIRE: Joi.string().default(DEFAULTS.JWT_REFRESH_EXPIRE),
+  APP_NAME: Joi.string().default(DEFAULTS.APP_NAME),
+  API_VERSION: Joi.string().default(DEFAULTS.API_VERSION),
+  RATE_LIMIT_WINDOW_MS: Joi.number().default(DEFAULTS.RATE_LIMIT_WINDOW_MS),
+  RATE_LIMIT_MAX_REQUESTS: Joi.number().default(DEFAULTS.RATE_LIMIT_MAX_REQUESTS),
+  SOCKET_PING_TIMEOUT: Joi.number().default(DEFAULTS.SOCKET_PING_TIMEOUT),
+  SOCKET_PING_INTERVAL: Joi.number().default(DEFAULTS.SOCKET_PING_INTERVAL),
+  MONGODB_MAX_POOL_SIZE: Joi.number().default(DEFAULTS.MONGODB_MAX_POOL_SIZE),
+  MONGODB_MIN_POOL_SIZE: Joi.number().default(DEFAULTS.MONGODB_MIN_POOL_SIZE),
+}).unknown();
+
+// Merge env + defaults (env takes priority)
+const mergedEnv = {
+  ...DEFAULTS,
+  ...process.env,
+};
+
+const { error, value: envVars } = envSchema.validate(mergedEnv, {
+  abortEarly: false,
+});
 
 if (error) {
   console.error(`❌ Config validation error: ${error.message}`);

@@ -23,7 +23,7 @@
     "rest-api",
     "websocket"
   ],
-  "author": "Your Name",
+  "author": "Hemanth Sayimpu",
   "license": "MIT",
   "dependencies": {
     "bcryptjs": "^2.4.3",
