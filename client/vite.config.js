@@ -27,21 +27,21 @@ export default defineConfig({
     },
   },
 
-  // Server configuration
+  // Server configuration (development only)
   server: {
     port: 3000,
     host: true, // Allow external connections
     open: true, // Auto-open browser
     cors: true,
     proxy: {
-      // Proxy API calls during development
+      // Proxy API calls during development only
       '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:5000',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: process.env.VITE_SOCKET_URL || 'http://localhost:5000',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         ws: true, // Enable websocket proxy
       }
@@ -51,9 +51,15 @@ export default defineConfig({
   // Build configuration
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: false, // Disable sourcemaps in production for smaller bundle
     minify: 'terser',
     target: 'esnext',
+    terserOptions: {
+      compress: {
+        drop_console: true, // Remove console.logs in production
+        drop_debugger: true,
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks: {
