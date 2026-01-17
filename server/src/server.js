@@ -8,15 +8,43 @@ import { handleConnection } from './api/socket/socketHandlers.js';
 
 const server = http.createServer(app);
 
+// Socket.IO CORS configuration
+const socketCorsOrigins = [
+  config.CLIENT_URL,
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://connexus.vercel.app',
+  /^https:\/\/connexus-.*\.vercel\.app$/,
+].filter(Boolean);
+
 const io = new SocketIOServer(server, {
   cors: {
-    origin: config.CLIENT_URL,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      
+      // Check exact match
+      if (socketCorsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // Check regex patterns
+      const allowedPattern = socketCorsOrigins.find(
+        pattern => pattern instanceof RegExp && pattern.test(origin)
+      );
+      
+      if (allowedPattern) {
+        return callback(null, true);
+      }
+      
+      callback(new Error('Socket.IO CORS not allowed'));
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
   transports: ['websocket', 'polling'],
-  pingTimeout: config.SOCKET_PING_TIMEOUT,
-  pingInterval: config.SOCKET_PING_INTERVAL,
+  pingTimeout: config.SOCKET_PING_TIMEOUT || 60000,
+  pingInterval: config.SOCKET_PING_INTERVAL || 25000,
+  allowEIO3: true, // Allow Engine.IO v3 clients
 });
 
 // Socket.IO authentication middleware
@@ -34,52 +62,76 @@ app.set('io', io);
  */
 const startServer = async () => {
   try {
+    // MongoDB connection with updated options (no deprecated ones)
     await mongoose.connect(config.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      maxPoolSize: config.MONGODB_MAX_POOL_SIZE,
-      minPoolSize: config.MONGODB_MIN_POOL_SIZE,
+      maxPoolSize: config.MONGODB_MAX_POOL_SIZE || 100,
+      minPoolSize: config.MONGODB_MIN_POOL_SIZE || 5,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
     });
-    console.log('MongoDB connected:', mongoose.connection.host, mongoose.connection.name);
+    
+    console.log('✅ MongoDB connected:', mongoose.connection.host, mongoose.connection.name);
 
-    const serverInstance = server.listen(config.PORT, () => {
-      console.log(`🚀 Server listening on port ${config.PORT} (${config.NODE_ENV})`);
-      console.log(`📡 API URL: http://localhost:${config.PORT}/api`);
-      console.log(`⚡ Socket.IO URL: ws://localhost:${config.PORT}/socket.io/`);
-      console.log(`🏥 Health Check: http://localhost:${config.PORT}/api/health`);
+    const PORT = config.PORT || 5000;
+    const serverInstance = server.listen(PORT, () => {
+      console.log(`🚀 Server listening on port ${PORT} (${config.NODE_ENV})`);
+      console.log(`📡 API URL: http://localhost:${PORT}/api`);
+      console.log(`⚡ Socket.IO URL: ws://localhost:${PORT}/socket.io/`);
+      console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
     });
 
-    process.on('SIGTERM', async () => {
-      console.log('SIGTERM received, shutting down gracefully');
+    // Graceful shutdown handlers
+    const gracefulShutdown = async (signal) => {
+      console.log(`\n${signal} received, shutting down gracefully...`);
       serverInstance.close(async () => {
-        await io.close();
-        await mongoose.connection.close(false);
-        console.log('MongoDB connection closed, exiting process.');
-        process.exit(0);
+        console.log('🔌 HTTP server closed');
+        
+        try {
+          await io.close();
+          console.log('🔌 Socket.IO closed');
+          
+          await mongoose.connection.close(false);
+          console.log('🔌 MongoDB connection closed');
+          
+          console.log('✅ Graceful shutdown complete');
+          process.exit(0);
+        } catch (err) {
+          console.error('❌ Error during shutdown:', err);
+          process.exit(1);
+        }
       });
-    });
 
-    process.on('SIGINT', async () => {
-      console.log('SIGINT received, shutting down gracefully');
-      serverInstance.close(async () => {
-        await io.close();
-        await mongoose.connection.close(false);
-        console.log('MongoDB connection closed, exiting process.');
-        process.exit(0);
-      });
-    });
+      // Force shutdown after 30 seconds
+      setTimeout(() => {
+        console.error('⚠️  Forced shutdown after timeout');
+        process.exit(1);
+      }, 30000);
+    };
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
     process.on('uncaughtException', (err) => {
-      console.error('Uncaught Exception:', err);
-      process.exit(1);
+      console.error('❌ Uncaught Exception:', err);
+      gracefulShutdown('uncaughtException');
     });
 
     process.on('unhandledRejection', (err) => {
-      console.error('Unhandled Rejection:', err);
-      process.exit(1);
+      console.error('❌ Unhandled Rejection:', err);
+      gracefulShutdown('unhandledRejection');
     });
+
+    // MongoDB connection error handlers
+    mongoose.connection.on('error', (err) => {
+      console.error('❌ MongoDB connection error:', err);
+    });
+
+    mongoose.connection.on('disconnected', () => {
+      console.warn('⚠️  MongoDB disconnected');
+    });
+
   } catch (error) {
-    console.error('Server startup failed:', error);
+    console.error('❌ Server startup failed:', error);
     process.exit(1);
   }
 };
